@@ -72,3 +72,25 @@ data class WeightedCard(
     val weight: Double,
     val reversed: Boolean
 )
+
+enum class AspectType(
+    val angle: Double,
+    val orb: Double,
+    val weightBonus: Double,
+    val symbol: String,
+    val label: String,
+    val isHarmonious: Boolean
+) {
+    CONJUNCTION( 0.0,  8.0, 2.00, "☌", "Conjunction", true),
+    SEXTILE    (60.0,  6.0, 0.75, "✶", "Sextile",     true),
+    SQUARE     (90.0,  8.0, 1.25, "□", "Square",      false),
+    TRINE      (120.0, 8.0, 1.00, "△", "Trine",       true),
+    OPPOSITION (180.0, 8.0, 1.50, "☍", "Opposition",  false)
+}
+
+data class Aspect(
+    val planet1: String,
+    val planet2: String,
+    val type: AspectType,
+    val orb: Double   // degrees from exact
+)

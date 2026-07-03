@@ -2,6 +2,7 @@ package com.astrotarot.engine
 
 import com.astrotarot.engine.data.FULL_DECK
 import com.astrotarot.engine.data.LocalEphemerisCalculator
+import com.astrotarot.engine.domain.AspectCalculator
 import com.astrotarot.engine.domain.TarotAstrologyEngine
 import java.time.Instant
 import java.time.LocalDateTime
@@ -16,7 +17,7 @@ fun main() {
     val engine = TarotAstrologyEngine(FULL_DECK)
 
     println("=====================================================")
-    println("  ASTRO-TAROT ENGINE v0.3")
+    println("  ASTRO-TAROT ENGINE v0.4 (Aspects)")
     println("=====================================================")
     println()
 
@@ -66,6 +67,17 @@ fun main() {
     }
     println("  Ascendant: ${"%.1f".format(astroData.ascendantDegree)}°   MC: ${"%.1f".format(astroData.midheavenDegree)}°")
     println()
+
+    val aspects = AspectCalculator.calculate(astroData.positions)
+    if (aspects.isNotEmpty()) {
+        println("── Active Aspects ───────────────────────────────────")
+        aspects.forEach { a ->
+            val tension = if (a.type.isHarmonious) "" else "  [tension]"
+            println("  %-8s %s %-8s  %4.1f° orb   %s%s"
+                .format(a.planet1, a.type.symbol, a.planet2, a.orb, a.type.label, tension))
+        }
+        println()
+    }
 
     val reading = engine.generateWeightedReading(astroData.positions, cardsToDraw = 3)
 
