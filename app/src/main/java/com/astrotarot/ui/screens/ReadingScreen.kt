@@ -59,6 +59,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import com.astrotarot.ui.artNouveauBackground
+import com.astrotarot.ui.LocalSoundManager
 import com.astrotarot.engine.domain.model.Aspect
 import com.astrotarot.engine.domain.model.PlanetPosition
 import com.astrotarot.engine.domain.model.WeightedCard
@@ -110,9 +111,11 @@ fun ReadingScreen(
     onNewReading: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val utcTime = Instant.ofEpochMilli(state.timestamp)
+    val utcTime      = Instant.ofEpochMilli(state.timestamp)
         .atZone(ZoneId.systemDefault())
         .format(TIME_FMT)
+    val soundManager = LocalSoundManager.current
+    var soundOn      by remember { mutableStateOf(true) }
 
     LazyColumn(
         modifier = modifier
@@ -125,13 +128,32 @@ fun ReadingScreen(
         // ── Header ────────────────────────────────────────────
         item {
             Spacer(Modifier.height(12.dp))
-            Text(
-                text = "YOUR READING",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.primary,
-                letterSpacing = 4.sp,
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = "YOUR READING",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary,
+                    letterSpacing = 4.sp,
+                )
+                TextButton(
+                    onClick = {
+                        soundOn = !soundOn
+                        soundManager?.muted = !soundOn
+                    },
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(4.dp),
+                ) {
+                    Text(
+                        text = if (soundOn) "♪" else "♪̶",
+                        color = if (soundOn) Gold.copy(alpha = 0.7f) else DimWhite.copy(alpha = 0.4f),
+                        fontSize = 16.sp,
+                    )
+                }
+            }
             Text(
                 text = "${"%.3f".format(state.lat)}°, ${"%.3f".format(state.lon)}°  ·  $utcTime",
                 style = MaterialTheme.typography.bodySmall,
@@ -219,9 +241,13 @@ fun FlippingTarotCard(
         context.resources.getIdentifier(resName, "drawable", context.packageName)
     }
 
+    val soundManager = LocalSoundManager.current
     LaunchedEffect(Unit) {
         delay(revealDelayMs)
+        soundManager?.playFlip()   // swoosh as card begins to turn
         revealed = true
+        delay(350)                 // halfway through the 700 ms flip animation
+        soundManager?.playReveal() // chime as face appears
     }
 
     val rotation by animateFloatAsState(
