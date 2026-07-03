@@ -56,11 +56,9 @@ class ReadingViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             _state.value = ReadingUiState.FetchingLocation
             try {
-                val location = fetchLocation()
+                val (lat, lon) = fetchCoordinates()
                 _state.value = ReadingUiState.Calculating
-                val result = withContext(Dispatchers.Default) {
-                    buildReading(location.latitude, location.longitude)
-                }
+                val result = withContext(Dispatchers.Default) { buildReading(lat, lon) }
                 _state.value = result
             } catch (e: Exception) {
                 _state.value = ReadingUiState.Error(e.message ?: "Location unavailable")
@@ -68,35 +66,57 @@ class ReadingViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    @SuppressLint("MissingPermission")  // caller ensures permission is granted
-    private suspend fun fetchLocation(): android.location.Location =
-        suspendCancellableCoroutine { cont ->
+    /** Skip GPS entirely and use manually entered coordinates. */
+    fun startReadingAt(lat: Double, lon: Double) {
+        if (_state.value is ReadingUiState.FetchingLocation ||
+            _state.value is ReadingUiState.Calculating) return
+
+        viewModelScope.launch {
+            _state.value = ReadingUiState.Calculating
+            val result = withContext(Dispatchers.Default) { buildReading(lat, lon) }
+            _state.value = result
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    private suspend fun fetchCoordinates(): Pair<Double, Double> {
+        // Try last known location first — this responds instantly to emulator
+        // mock locations (adb emu geo fix) and is cheaper than a fresh fix.
+        val last = suspendCancellableCoroutine<android.location.Location?> { cont ->
+            fusedClient.lastLocation
+                .addOnSuccessListener { cont.resume(it) }
+                .addOnFailureListener { cont.resume(null) }
+        }
+        if (last != null) return last.latitude to last.longitude
+
+        // Fall back to a fresh location fix (real device, cold GPS).
+        val fresh = suspendCancellableCoroutine<android.location.Location?> { cont ->
             val request = CurrentLocationRequest.Builder()
-                .setPriority(Priority.PRIORITY_BALANCED_POWER_ACCURACY)
+                .setPriority(Priority.PRIORITY_HIGH_ACCURACY)
                 .setDurationMillis(15_000L)
                 .build()
             fusedClient.getCurrentLocation(request, null)
-                .addOnSuccessListener { loc ->
-                    if (loc != null) cont.resume(loc)
-                    else cont.resumeWithException(Exception("Could not determine location"))
-                }
+                .addOnSuccessListener { cont.resume(it) }
                 .addOnFailureListener { cont.resumeWithException(it) }
         }
+        return fresh?.latitude?.let { it to fresh.longitude }
+            ?: throw Exception("Could not determine location.\nTry entering coordinates manually.")
+    }
 
     private fun buildReading(lat: Double, lon: Double): ReadingUiState.Success {
-        val now      = System.currentTimeMillis()
-        val astro    = LocalEphemerisCalculator.calculate(lat, lon, now)
-        val aspects  = AspectCalculator.calculate(astro.positions)
-        val reading  = engine.generateWeightedReading(astro.positions, cardsToDraw = 3)
+        val now     = System.currentTimeMillis()
+        val astro   = LocalEphemerisCalculator.calculate(lat, lon, now)
+        val aspects = AspectCalculator.calculate(astro.positions)
+        val reading = engine.generateWeightedReading(astro.positions, cardsToDraw = 3)
         return ReadingUiState.Success(
-            reading          = reading,
-            positions        = astro.positions,
-            aspects          = aspects,
-            ascendantDegree  = astro.ascendantDegree,
-            midheavenDegree  = astro.midheavenDegree,
-            lat              = lat,
-            lon              = lon,
-            timestamp        = now,
+            reading         = reading,
+            positions       = astro.positions,
+            aspects         = aspects,
+            ascendantDegree = astro.ascendantDegree,
+            midheavenDegree = astro.midheavenDegree,
+            lat             = lat,
+            lon             = lon,
+            timestamp       = now,
         )
     }
 

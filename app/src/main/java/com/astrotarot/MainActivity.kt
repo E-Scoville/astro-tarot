@@ -31,6 +31,7 @@ class MainActivity : ComponentActivity() {
                         WelcomeScreen(
                             state = s,
                             onReadingRequested = { vm.startReading() },
+                            onManualCoordinates = { lat, lon -> vm.startReadingAt(lat, lon) },
                             modifier = Modifier.fillMaxSize(),
                         )
 
