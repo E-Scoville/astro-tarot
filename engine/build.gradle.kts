@@ -20,3 +20,7 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     testImplementation(libs.junit)
 }
+
+tasks.test {
+    useJUnit()
+}
