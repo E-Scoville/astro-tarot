@@ -1,14 +1,17 @@
 package com.astrotarot.engine
 
 import com.astrotarot.engine.data.FULL_DECK
+import com.astrotarot.engine.data.LocalEphemerisCalculator
 import com.astrotarot.engine.domain.TarotAstrologyEngine
-import com.astrotarot.engine.domain.model.PlanetPosition
+import java.time.Instant
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
 
 fun main() {
     val engine = TarotAstrologyEngine(FULL_DECK)
 
     println("=====================================================")
-    println("  REAL-TIME ASTRO-TAROT ENGINE v0.1 (CLI MVP)")
+    println("  REAL-TIME ASTRO-TAROT ENGINE v0.2 (Live Ephemeris)")
     println("=====================================================")
     println()
 
@@ -18,27 +21,28 @@ fun main() {
     print("Enter Local Longitude (e.g., -111.73): ")
     val lon = readLine()?.toDoubleOrNull() ?: 0.0
 
+    val now = System.currentTimeMillis()
+    val utcTime = Instant.ofEpochMilli(now)
+        .atOffset(ZoneOffset.UTC)
+        .format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm 'UTC'"))
+
     println()
-    println("Coordinates received: $lat, $lon")
-    println("Calculating weighted reading from mock transit data...")
-    println("(Live ephemeris API will replace this in Phase 2)")
+    println("Coordinates: $lat°, $lon°   |   $utcTime")
+    println("Computing live ephemeris (Meeus algorithms, J2000.0 elements)...")
     println()
 
-    // Phase 1: mock transits. Replace with real API call in Phase 2.
-    val transits = listOf(
-        PlanetPosition("SUN",     "GEMINI",      85.1,  3),
-        PlanetPosition("MOON",    "CANCER",       4.5,  4),
-        PlanetPosition("MERCURY", "GEMINI",      68.2,  3),
-        PlanetPosition("VENUS",   "TAURUS",      42.8,  2),
-        PlanetPosition("MARS",    "ARIES",       12.4,  1),
-        PlanetPosition("JUPITER", "GEMINI",      71.4,  3),
-        PlanetPosition("SATURN",  "PISCES",     335.7, 12),
-        PlanetPosition("URANUS",  "TAURUS",      54.9,  2),
-        PlanetPosition("NEPTUNE", "PISCES",     357.1, 12),
-        PlanetPosition("PLUTO",   "AQUARIUS",   301.8, 11)
-    )
+    val astroData = LocalEphemerisCalculator.calculate(lat, lon, now)
 
-    val reading = engine.generateWeightedReading(transits, cardsToDraw = 3)
+    println("── Planetary Positions ──────────────────────────────")
+    astroData.positions.forEach { pos ->
+        val retro = if (pos.isRetrograde) " ℞" else ""
+        println("  %-8s  %-12s  %6.1f°  House %2d%s"
+            .format(pos.planet, pos.sign, pos.longitude, pos.house, retro))
+    }
+    println("  Ascendant: ${"%.1f".format(astroData.ascendantDegree)}°   MC: ${"%.1f".format(astroData.midheavenDegree)}°")
+    println()
+
+    val reading = engine.generateWeightedReading(astroData.positions, cardsToDraw = 3)
 
     println("======================= YOUR SPREAD =======================")
     reading.forEachIndexed { index, weightedCard ->
