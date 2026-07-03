@@ -106,12 +106,6 @@ private val PLANET_GLYPHS = mapOf(
     "PLUTO"   to "♇",
 )
 
-private val POSITION_LABELS = listOf(
-    "I — Self & Present",
-    "II — Action & Will",
-    "III — Foundation",
-)
-
 @Composable
 fun ReadingScreen(
     state: ReadingUiState.Success,
@@ -166,22 +160,41 @@ fun ReadingScreen(
                 color = DimIvory,
                 modifier = Modifier.padding(top = 2.dp),
             )
+            Text(
+                text = state.spread.name,
+                style = MaterialTheme.typography.labelSmall,
+                color = DimIvory,
+                modifier = Modifier.padding(top = 2.dp),
+            )
             Spacer(Modifier.height(24.dp))
         }
 
-        // ── 3-Card Spread ─────────────────────────────────────
+        // ── Spread ──────────────────────────────────────────────
         item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                state.reading.forEachIndexed { i, wc ->
-                    FlippingTarotCard(
-                        weightedCard   = wc,
-                        positionLabel  = POSITION_LABELS[i],
-                        revealDelayMs  = 300L + i * 500L,
-                        modifier       = Modifier.weight(1f),
-                    )
+            // For larger spreads (e.g. the Twelve Houses) a shorter per-card stagger keeps
+            // the full reveal from taking forever; 3-card spreads keep the original pacing.
+            val cardCount = state.reading.size
+            val staggerMs = if (cardCount > 3) 200L else 500L
+            // Grid of up to 3 cards per row; partial rows are centered.
+            // A single-card spread gets a larger, centered presentation.
+            state.reading.chunked(3).forEachIndexed { rowIdx, rowCards ->
+                if (rowIdx > 0) Spacer(Modifier.height(16.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    val sidePad = if (cardCount == 1) 0.5f else (3 - rowCards.size) / 2f
+                    if (sidePad > 0f) Spacer(Modifier.weight(sidePad))
+                    rowCards.forEachIndexed { j, wc ->
+                        val i = rowIdx * 3 + j
+                        FlippingTarotCard(
+                            weightedCard   = wc,
+                            positionLabel  = state.spread.positions.getOrNull(i)?.label ?: "",
+                            revealDelayMs  = 300L + i * staggerMs,
+                            modifier       = Modifier.weight(1f),
+                        )
+                    }
+                    if (sidePad > 0f) Spacer(Modifier.weight(sidePad))
                 }
             }
             Spacer(Modifier.height(32.dp))

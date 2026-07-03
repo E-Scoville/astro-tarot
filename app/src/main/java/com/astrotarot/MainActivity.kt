@@ -49,8 +49,8 @@ class MainActivity : ComponentActivity() {
                         is ReadingUiState.Error ->
                             WelcomeScreen(
                                 state = s,
-                                onReadingRequested = { ts -> vm.startReading(ts) },
-                                onManualCoordinates = { lat, lon, ts -> vm.startReadingAt(lat, lon, ts) },
+                                onReadingRequested = { ts, spread -> vm.startReading(ts, spread) },
+                                onManualCoordinates = { lat, lon, ts, spread -> vm.startReadingAt(lat, lon, ts, spread) },
                                 onShowInfo = { showInfo = true },
                                 modifier = Modifier.fillMaxSize(),
                             )

@@ -75,6 +75,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.astrotarot.R
+import com.astrotarot.engine.domain.model.Spread
+import com.astrotarot.engine.domain.model.Spreads
 import com.astrotarot.ui.ReadingUiState
 import com.astrotarot.ui.artNouveauBackground
 import com.astrotarot.ui.theme.DimIvory
@@ -147,8 +149,8 @@ private fun ZoneId.utcOffsetLabel(): String {
 @Composable
 fun WelcomeScreen(
     state: ReadingUiState,
-    onReadingRequested: (timestamp: Long) -> Unit,
-    onManualCoordinates: (lat: Double, lon: Double, timestamp: Long) -> Unit,
+    onReadingRequested: (timestamp: Long, spread: Spread) -> Unit,
+    onManualCoordinates: (lat: Double, lon: Double, timestamp: Long, spread: Spread) -> Unit,
     onShowInfo: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -158,6 +160,8 @@ fun WelcomeScreen(
     var showLocation  by remember { mutableStateOf(false) }
     var showTime      by remember { mutableStateOf(false) }
     var showZonePicker by remember { mutableStateOf(false) }
+    var showSpreadPicker by remember { mutableStateOf(false) }
+    var selectedSpread by remember { mutableStateOf(Spreads.ANGLES) }
 
     // Location search state
     var searchQuery     by remember { mutableStateOf("") }
@@ -182,7 +186,7 @@ fun WelcomeScreen(
     ) { results ->
         val granted = results[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
                 results[Manifest.permission.ACCESS_COARSE_LOCATION] == true
-        if (granted) onReadingRequested(resolvedTimestamp())
+        if (granted) onReadingRequested(resolvedTimestamp(), selectedSpread)
         else showLocation = true
     }
 
@@ -190,7 +194,7 @@ fun WelcomeScreen(
         val hasPermission = ContextCompat.checkSelfPermission(
             context, Manifest.permission.ACCESS_FINE_LOCATION
         ) == PackageManager.PERMISSION_GRANTED
-        if (hasPermission) onReadingRequested(resolvedTimestamp())
+        if (hasPermission) onReadingRequested(resolvedTimestamp(), selectedSpread)
         else permissionLauncher.launch(LOCATION_PERMISSIONS)
     }
 
@@ -251,6 +255,14 @@ fun WelcomeScreen(
         )
     }
 
+    if (showSpreadPicker) {
+        SpreadPickerDialog(
+            currentSpread = selectedSpread,
+            onSelect      = { selectedSpread = it },
+            onDismiss     = { showSpreadPicker = false },
+        )
+    }
+
     Box(
         modifier = modifier
             .fillMaxSize()
@@ -303,6 +315,31 @@ fun WelcomeScreen(
             }
 
             Spacer(Modifier.height(40.dp))
+
+            // ── Spread selector row ───────────────────────────────
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(6.dp))
+                    .clickable { showSpreadPicker = true }
+                    .padding(vertical = 8.dp, horizontal = 2.dp),
+            ) {
+                Text("Spread", color = DimIvory, style = MaterialTheme.typography.bodySmall)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = selectedSpread.name,
+                        color = Gold.copy(alpha = 0.8f),
+                        style = MaterialTheme.typography.bodySmall,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text("  ›", color = DimIvory, style = MaterialTheme.typography.bodySmall)
+                }
+            }
+
+            Spacer(Modifier.height(8.dp))
 
             OutlinedButton(
                 onClick = ::onGpsButtonTapped,
@@ -421,7 +458,7 @@ fun WelcomeScreen(
                         OutlinedButton(
                             onClick = {
                                 val a = selectedAddress ?: return@OutlinedButton
-                                onManualCoordinates(a.latitude, a.longitude, resolvedTimestamp())
+                                onManualCoordinates(a.latitude, a.longitude, resolvedTimestamp(), selectedSpread)
                             },
                             shape  = RoundedCornerShape(4.dp),
                             border = BorderStroke(1.dp, GoldFrameBrush),
@@ -605,6 +642,75 @@ private fun ZonePickerDialog(
                         }
                     }
                     if (zoneIdStr != COMMON_ZONES.last().first) {
+                        HorizontalDivider(color = DimIvory.copy(alpha = 0.08f))
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel", color = DimIvory, style = MaterialTheme.typography.bodySmall)
+            }
+        },
+    )
+}
+
+// ── Spread picker dialog ──────────────────────────────────────────────────────
+
+@Composable
+private fun SpreadPickerDialog(
+    currentSpread: Spread,
+    onSelect: (Spread) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor   = IndigoSurface,
+        shape            = RoundedCornerShape(8.dp),
+        modifier         = Modifier.border(1.dp, Gold.copy(alpha = 0.4f), RoundedCornerShape(8.dp)),
+        title = {
+            Text(
+                "Select Spread",
+                style = MaterialTheme.typography.titleMedium,
+                color = Gold,
+            )
+        },
+        text = {
+            LazyColumn(modifier = Modifier.heightIn(max = 380.dp)) {
+                items(Spreads.ALL) { spread ->
+                    val isSelected = spread.id == currentSpread.id
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onSelect(spread); onDismiss() }
+                            .padding(vertical = 10.dp, horizontal = 4.dp),
+                    ) {
+                        Text(
+                            text  = if (isSelected) "✦  " else "     ",
+                            color = Gold,
+                            fontSize = 10.sp,
+                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text  = spread.name,
+                                color = if (isSelected) Gold else Ivory,
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                            )
+                            Text(
+                                text  = spread.tagline,
+                                color = DimIvory,
+                                style = MaterialTheme.typography.labelSmall,
+                            )
+                        }
+                        Text(
+                            text  = "${spread.positions.size} card${if (spread.positions.size == 1) "" else "s"}",
+                            color = DimIvory,
+                            style = MaterialTheme.typography.labelSmall,
+                        )
+                    }
+                    if (spread.id != Spreads.ALL.last().id) {
                         HorizontalDivider(color = DimIvory.copy(alpha = 0.08f))
                     }
                 }

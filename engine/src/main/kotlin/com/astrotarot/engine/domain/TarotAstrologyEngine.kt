@@ -11,13 +11,7 @@ class TarotAstrologyEngine(private val deck: List<TarotCard>) {
         aspects: List<Aspect> = AspectCalculator.calculate(transits),
         random: Random = Random.Default
     ): List<WeightedCard> {
-        val planetLookup = transits.associateBy { it.planet }
-
-        val weights = deck.map { card ->
-            val (transitWeight, topPlanet) = calculateTransitWeight(card, transits)
-            val aspectBonus               = calculateAspectBonus(card, aspects, planetLookup)
-            Triple(card, transitWeight + aspectBonus, topPlanet)
-        }
+        val weights = buildWeightTable(transits, aspects)
 
         val avgWeight = weights.map { it.second }.average()
         val drawn = weightedRandomSample(
@@ -35,6 +29,76 @@ class TarotAstrologyEngine(private val deck: List<TarotCard>) {
                 WeightedCard(card, weight, reversed = false,
                     primaryInfluence = influenceMap[card])
             }
+        }
+    }
+
+    /**
+     * Draws one weighted card per spread position, without replacement across the
+     * whole spread. Positions bound to a house with at least one occupying transit
+     * are weighted using ONLY that house's transits (and aspects touching it); all
+     * other positions (unbound, or a house with no transits) use the full sky.
+     */
+    fun generateSpreadReading(
+        transits: List<PlanetPosition>,
+        spread: Spread,
+        aspects: List<Aspect> = AspectCalculator.calculate(transits),
+        random: Random = Random.Default,
+    ): List<WeightedCard> {
+        val fullWeights = buildWeightTable(transits, aspects)
+        val fullAvg = fullWeights.map { it.second }.average()
+        val fullInfluence = fullWeights.associate { (card, _, planet) -> card to planet }
+
+        val usedCards = mutableSetOf<TarotCard>()
+        val result = mutableListOf<WeightedCard>()
+
+        for (position in spread.positions) {
+            val houseTransits = position.house?.let { house -> transits.filter { it.house == house } }
+            val useHouseScope = !houseTransits.isNullOrEmpty()
+
+            val (weights, avgWeight, influenceMap) = if (useHouseScope) {
+                val houseAspects = aspects.filter { aspect ->
+                    houseTransits!!.any { it.planet == aspect.planet1 || it.planet == aspect.planet2 }
+                }
+                val table = buildWeightTable(houseTransits!!, houseAspects)
+                Triple(table, table.map { it.second }.average(),
+                    table.associate { (card, _, planet) -> card to planet })
+            } else {
+                Triple(fullWeights, fullAvg, fullInfluence)
+            }
+
+            val available = weights.filter { it.first !in usedCards }
+            if (available.isEmpty()) continue
+
+            val (card, weight) = weightedRandomSample(
+                available.map { (c, w, _) -> c to w }, 1, random,
+            ).first()
+            usedCards += card
+
+            val reversed = weight < avgWeight
+            val weightedCard = if (reversed) {
+                val (rPlanet, rMarker) = findReversalInfluence(card, transits, aspects)
+                WeightedCard(card, weight, reversed = true,
+                    primaryInfluence = rPlanet, reversalMarker = rMarker)
+            } else {
+                WeightedCard(card, weight, reversed = false,
+                    primaryInfluence = influenceMap[card])
+            }
+            result += weightedCard
+        }
+
+        return result
+    }
+
+    // Builds a per-card weight table: card -> (total weight, top-contributing planet).
+    private fun buildWeightTable(
+        transits: List<PlanetPosition>,
+        aspects: List<Aspect>,
+    ): List<Triple<TarotCard, Double, CelestialBody?>> {
+        val planetLookup = transits.associateBy { it.planet }
+        return deck.map { card ->
+            val (transitWeight, topPlanet) = calculateTransitWeight(card, transits)
+            val aspectBonus               = calculateAspectBonus(card, aspects, planetLookup)
+            Triple(card, transitWeight + aspectBonus, topPlanet)
         }
     }
 

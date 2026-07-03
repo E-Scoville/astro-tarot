@@ -10,6 +10,8 @@ import com.astrotarot.engine.domain.AspectCalculator
 import com.astrotarot.engine.domain.TarotAstrologyEngine
 import com.astrotarot.engine.domain.model.Aspect
 import com.astrotarot.engine.domain.model.PlanetPosition
+import com.astrotarot.engine.domain.model.Spread
+import com.astrotarot.engine.domain.model.Spreads
 import com.astrotarot.engine.domain.model.WeightedCard
 import com.google.android.gms.location.CurrentLocationRequest
 import com.google.android.gms.location.LocationServices
@@ -39,6 +41,7 @@ sealed class ReadingUiState {
         val lat: Double,
         val lon: Double,
         val timestamp: Long,
+        val spread: Spread,
     ) : ReadingUiState()
     data class Error(val message: String) : ReadingUiState()
 }
@@ -51,7 +54,7 @@ class ReadingViewModel(app: Application) : AndroidViewModel(app) {
     private val _state = MutableStateFlow<ReadingUiState>(ReadingUiState.Idle)
     val state: StateFlow<ReadingUiState> = _state.asStateFlow()
 
-    fun startReading(timestamp: Long = System.currentTimeMillis()) {
+    fun startReading(timestamp: Long = System.currentTimeMillis(), spread: Spread = Spreads.ANGLES) {
         if (_state.value is ReadingUiState.FetchingLocation ||
             _state.value is ReadingUiState.Calculating) return
 
@@ -60,7 +63,7 @@ class ReadingViewModel(app: Application) : AndroidViewModel(app) {
             try {
                 val (lat, lon) = fetchCoordinates()
                 _state.value = ReadingUiState.Calculating
-                val result = withContext(Dispatchers.Default) { buildReading(lat, lon, timestamp) }
+                val result = withContext(Dispatchers.Default) { buildReading(lat, lon, timestamp, spread) }
                 _state.value = result
             } catch (e: CancellationException) {
                 throw e   // never swallow cancellation — structured concurrency depends on it
@@ -71,13 +74,17 @@ class ReadingViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** Skip GPS entirely and use manually entered coordinates. */
-    fun startReadingAt(lat: Double, lon: Double, timestamp: Long = System.currentTimeMillis()) {
+    fun startReadingAt(
+        lat: Double, lon: Double,
+        timestamp: Long = System.currentTimeMillis(),
+        spread: Spread = Spreads.ANGLES,
+    ) {
         if (_state.value is ReadingUiState.FetchingLocation ||
             _state.value is ReadingUiState.Calculating) return
 
         viewModelScope.launch {
             _state.value = ReadingUiState.Calculating
-            val result = withContext(Dispatchers.Default) { buildReading(lat, lon, timestamp) }
+            val result = withContext(Dispatchers.Default) { buildReading(lat, lon, timestamp, spread) }
             _state.value = result
         }
     }
@@ -109,10 +116,14 @@ class ReadingViewModel(app: Application) : AndroidViewModel(app) {
             ?: throw Exception("Could not determine location.\nTry entering coordinates manually.")
     }
 
-    private fun buildReading(lat: Double, lon: Double, timestamp: Long = System.currentTimeMillis()): ReadingUiState.Success {
+    private fun buildReading(
+        lat: Double, lon: Double,
+        timestamp: Long = System.currentTimeMillis(),
+        spread: Spread = Spreads.ANGLES,
+    ): ReadingUiState.Success {
         val astro   = LocalEphemerisCalculator.calculate(lat, lon, timestamp)
         val aspects = AspectCalculator.calculate(astro.positions)
-        val reading = engine.generateWeightedReading(astro.positions, cardsToDraw = 3, aspects = aspects)
+        val reading = engine.generateSpreadReading(astro.positions, spread, aspects = aspects)
         return ReadingUiState.Success(
             reading         = reading,
             positions       = astro.positions,
@@ -122,6 +133,7 @@ class ReadingViewModel(app: Application) : AndroidViewModel(app) {
             lat             = lat,
             lon             = lon,
             timestamp       = timestamp,
+            spread          = spread,
         )
     }
 
