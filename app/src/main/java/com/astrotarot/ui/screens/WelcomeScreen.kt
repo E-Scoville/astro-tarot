@@ -27,12 +27,16 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -65,14 +69,19 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.astrotarot.ui.ReadingUiState
+import com.astrotarot.ui.artNouveauBackground
 import com.astrotarot.ui.theme.CardSurface
 import com.astrotarot.ui.theme.DimWhite
 import com.astrotarot.ui.theme.Gold
+import com.astrotarot.ui.theme.MidnightBlue
+import com.astrotarot.ui.theme.StarWhite
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.time.LocalDateTime
+import java.time.ZoneId
 import java.time.ZoneOffset
+import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 import java.util.Calendar
 
@@ -81,13 +90,50 @@ private val LOCATION_PERMISSIONS = arrayOf(
     Manifest.permission.ACCESS_COARSE_LOCATION,
 )
 
-private val DISPLAY_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd  HH:mm 'UTC'")
+private val DATE_TIME_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd  HH:mm")
 
 private fun Address.displayName(): String = listOfNotNull(
     locality ?: featureName,
     adminArea,
     countryName,
 ).joinToString(", ")
+
+// Curated list of major timezone IDs with friendly labels
+private val COMMON_ZONES = listOf(
+    "Pacific/Honolulu"    to "Honolulu",
+    "America/Anchorage"   to "Anchorage",
+    "America/Los_Angeles" to "Los Angeles / Seattle",
+    "America/Denver"      to "Denver / Salt Lake City",
+    "America/Phoenix"     to "Phoenix (no DST)",
+    "America/Chicago"     to "Chicago / Dallas",
+    "America/New_York"    to "New York / Miami",
+    "America/Halifax"     to "Halifax / Atlantic",
+    "America/Sao_Paulo"   to "São Paulo / Buenos Aires",
+    "Atlantic/Azores"     to "Azores",
+    "UTC"                 to "UTC",
+    "Europe/London"       to "London / Dublin",
+    "Europe/Paris"        to "Paris / Berlin / Rome",
+    "Europe/Athens"       to "Athens / Helsinki / Cairo",
+    "Europe/Moscow"       to "Moscow",
+    "Asia/Dubai"          to "Dubai / Muscat",
+    "Asia/Karachi"        to "Karachi / Islamabad",
+    "Asia/Kolkata"        to "India",
+    "Asia/Dhaka"          to "Dhaka",
+    "Asia/Bangkok"        to "Bangkok / Jakarta",
+    "Asia/Shanghai"       to "Beijing / Singapore / Perth",
+    "Asia/Tokyo"          to "Tokyo / Seoul",
+    "Australia/Adelaide"  to "Adelaide",
+    "Australia/Sydney"    to "Sydney / Melbourne",
+    "Pacific/Auckland"    to "Auckland",
+)
+
+private fun ZoneId.friendlyLabel(): String =
+    COMMON_ZONES.find { ZoneId.of(it.first) == this }?.second ?: id
+
+private fun ZoneId.utcOffsetLabel(): String {
+    val offset = ZonedDateTime.now(this).offset
+    return if (offset == ZoneOffset.UTC) "UTC" else "UTC$offset"
+}
 
 @Composable
 fun WelcomeScreen(
@@ -100,8 +146,9 @@ fun WelcomeScreen(
     val context = LocalContext.current
     val scope   = rememberCoroutineScope()
 
-    var showLocation by remember { mutableStateOf(false) }
-    var showTime     by remember { mutableStateOf(false) }
+    var showLocation  by remember { mutableStateOf(false) }
+    var showTime      by remember { mutableStateOf(false) }
+    var showZonePicker by remember { mutableStateOf(false) }
 
     // Location search state
     var searchQuery     by remember { mutableStateOf("") }
@@ -113,10 +160,11 @@ fun WelcomeScreen(
     // Custom time state — null means "now"
     var customTime    by remember { mutableStateOf<LocalDateTime?>(null) }
     var useCustomTime by remember { mutableStateOf(false) }
+    var selectedZone  by remember { mutableStateOf(ZoneId.systemDefault()) }
 
     fun resolvedTimestamp(): Long =
         if (useCustomTime && customTime != null)
-            customTime!!.toInstant(ZoneOffset.UTC).toEpochMilli()
+            customTime!!.atZone(selectedZone).toInstant().toEpochMilli()
         else
             System.currentTimeMillis()
 
@@ -160,7 +208,7 @@ fun WelcomeScreen(
     }
 
     fun showDateTimePicker() {
-        val base = customTime ?: LocalDateTime.now(ZoneOffset.UTC)
+        val base = customTime ?: LocalDateTime.now(selectedZone)
         val cal = Calendar.getInstance().apply {
             set(base.year, base.monthValue - 1, base.dayOfMonth, base.hour, base.minute)
         }
@@ -184,10 +232,19 @@ fun WelcomeScreen(
         ).show()
     }
 
+    if (showZonePicker) {
+        ZonePickerDialog(
+            currentZone = selectedZone,
+            onSelect    = { selectedZone = it },
+            onDismiss   = { showZonePicker = false },
+        )
+    }
+
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background),
+            .background(MaterialTheme.colorScheme.background)
+            .artNouveauBackground(),
         contentAlignment = Alignment.Center,
     ) {
         Column(
@@ -210,11 +267,21 @@ fun WelcomeScreen(
             Spacer(Modifier.height(8.dp))
 
             Text(
-                text = "Celestial guidance through\nplanetary alignment",
+                text = "The positions of the planets\nat this exact moment determine\nwhich cards appear.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = DimWhite,
                 textAlign = TextAlign.Center,
-                lineHeight = 22.sp,
+                lineHeight = 24.sp,
+            )
+
+            Spacer(Modifier.height(6.dp))
+
+            Text(
+                text = "Nothing is random.",
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Bold,
+                color = Gold.copy(alpha = 0.85f),
+                textAlign = TextAlign.Center,
             )
 
             TextButton(onClick = onShowInfo) {
@@ -231,11 +298,9 @@ fun WelcomeScreen(
                 onClick = ::onGpsButtonTapped,
                 colors = ButtonDefaults.buttonColors(
                     containerColor = MaterialTheme.colorScheme.primary,
-                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                    contentColor   = MaterialTheme.colorScheme.onPrimary,
                 ),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(52.dp),
+                modifier = Modifier.fillMaxWidth().height(52.dp),
             ) {
                 Text("DRAW A READING", fontWeight = FontWeight.Bold, letterSpacing = 2.sp)
             }
@@ -252,16 +317,8 @@ fun WelcomeScreen(
                 )
             }
 
-            AnimatedVisibility(
-                visible = showLocation,
-                enter = expandVertically(),
-                exit = shrinkVertically(),
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 4.dp),
-                ) {
+            AnimatedVisibility(visible = showLocation, enter = expandVertically(), exit = shrinkVertically()) {
+                Column(modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) {
                     val fieldColors = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor   = Gold,
                         unfocusedBorderColor = DimWhite,
@@ -271,7 +328,6 @@ fun WelcomeScreen(
                         focusedTextColor     = MaterialTheme.colorScheme.onBackground,
                         unfocusedTextColor   = MaterialTheme.colorScheme.onBackground,
                     )
-
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalAlignment = Alignment.CenterVertically,
@@ -330,19 +386,11 @@ fun WelcomeScreen(
                                     .padding(vertical = 3.dp)
                                     .clip(RoundedCornerShape(8.dp))
                                     .background(if (isSelected) CardSurface else CardSurface.copy(alpha = 0.5f))
-                                    .border(
-                                        width = 1.dp,
-                                        color = if (isSelected) Gold else DimWhite.copy(alpha = 0.2f),
-                                        shape = RoundedCornerShape(8.dp),
-                                    )
+                                    .border(1.dp, if (isSelected) Gold else DimWhite.copy(alpha = 0.2f), RoundedCornerShape(8.dp))
                                     .clickable { selectedAddress = address }
                                     .padding(horizontal = 12.dp, vertical = 10.dp),
                             ) {
-                                Text(
-                                    text = if (isSelected) "✦  " else "    ",
-                                    color = Gold,
-                                    style = MaterialTheme.typography.bodySmall,
-                                )
+                                Text(if (isSelected) "✦  " else "    ", color = Gold, style = MaterialTheme.typography.bodySmall)
                                 Text(
                                     text = address.displayName(),
                                     color = if (isSelected) Gold else DimWhite,
@@ -365,9 +413,7 @@ fun WelcomeScreen(
                                 containerColor = MaterialTheme.colorScheme.secondary,
                                 contentColor   = MaterialTheme.colorScheme.onSecondary,
                             ),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(48.dp),
+                            modifier = Modifier.fillMaxWidth().height(48.dp),
                         ) {
                             Text(
                                 "DRAW FOR ${selectedAddress!!.displayName().uppercase()}",
@@ -382,41 +428,28 @@ fun WelcomeScreen(
             }
 
             // ── Historical / future time toggle ───────────────────────
-            HorizontalDivider(
-                modifier = Modifier.padding(vertical = 8.dp),
-                color = DimWhite.copy(alpha = 0.2f),
-            )
+            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp), color = DimWhite.copy(alpha = 0.2f))
 
             TextButton(onClick = { showTime = !showTime }) {
                 Text(
-                    text = if (showTime) "▲ Hide time selection"
-                           else "▼ Choose a different time",
+                    text = if (showTime) "▲ Hide time selection" else "▼ Choose a different time",
                     color = DimWhite,
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
 
-            AnimatedVisibility(
-                visible = showTime,
-                enter = expandVertically(),
-                exit = shrinkVertically(),
-            ) {
+            AnimatedVisibility(visible = showTime, enter = expandVertically(), exit = shrinkVertically()) {
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 4.dp),
+                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
                 ) {
+                    // ── Use current time toggle ───────────────────────
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween,
                         modifier = Modifier.fillMaxWidth(),
                     ) {
-                        Text(
-                            text = "Use current time",
-                            color = DimWhite,
-                            style = MaterialTheme.typography.bodySmall,
-                        )
+                        Text("Use current time", color = DimWhite, style = MaterialTheme.typography.bodySmall)
                         Switch(
                             checked = !useCustomTime,
                             onCheckedChange = { nowSelected ->
@@ -434,32 +467,54 @@ fun WelcomeScreen(
 
                     Spacer(Modifier.height(8.dp))
 
+                    // ── Date / time picker button ─────────────────────
+                    val zoneOffset = selectedZone.utcOffsetLabel()
                     OutlinedButton(
                         onClick = ::showDateTimePicker,
                         modifier = Modifier.fillMaxWidth(),
                         border = androidx.compose.foundation.BorderStroke(
-                            1.dp,
-                            if (useCustomTime) Gold else DimWhite.copy(alpha = 0.4f),
+                            1.dp, if (useCustomTime) Gold else DimWhite.copy(alpha = 0.4f),
                         ),
                     ) {
                         Text(
                             text = if (useCustomTime && customTime != null)
-                                customTime!!.format(DISPLAY_FMT)
+                                "${customTime!!.format(DATE_TIME_FMT)}  $zoneOffset"
                             else
-                                "Select date & time (UTC)",
+                                "Select date & time",
                             color = if (useCustomTime) Gold else DimWhite,
                             style = MaterialTheme.typography.bodySmall,
                         )
                     }
 
-                    if (useCustomTime && customTime != null) {
-                        Spacer(Modifier.height(4.dp))
-                        TextButton(onClick = { useCustomTime = false; customTime = null }) {
+                    Spacer(Modifier.height(4.dp))
+
+                    // ── Timezone selector row ─────────────────────────
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(6.dp))
+                            .clickable { showZonePicker = true }
+                            .padding(vertical = 8.dp, horizontal = 2.dp),
+                    ) {
+                        Text("Timezone", color = DimWhite, style = MaterialTheme.typography.bodySmall)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
-                                "✕  Clear — use current time",
-                                color = DimWhite,
+                                text = "${selectedZone.friendlyLabel()}  ($zoneOffset)",
+                                color = Gold.copy(alpha = 0.8f),
                                 style = MaterialTheme.typography.bodySmall,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
                             )
+                            Text("  ›", color = DimWhite, style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+
+                    if (useCustomTime && customTime != null) {
+                        Spacer(Modifier.height(2.dp))
+                        TextButton(onClick = { useCustomTime = false; customTime = null }) {
+                            Text("✕  Clear — use current time", color = DimWhite, style = MaterialTheme.typography.bodySmall)
                         }
                     }
                 }
@@ -477,6 +532,70 @@ fun WelcomeScreen(
             }
         }
     }
+}
+
+// ── Timezone picker dialog ────────────────────────────────────────────────────
+
+@Composable
+private fun ZonePickerDialog(
+    currentZone: ZoneId,
+    onSelect: (ZoneId) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor   = MidnightBlue,
+        title = {
+            Text(
+                "Select Timezone",
+                style = MaterialTheme.typography.titleMedium,
+                color = Gold,
+            )
+        },
+        text = {
+            LazyColumn(modifier = Modifier.heightIn(max = 380.dp)) {
+                items(COMMON_ZONES) { (zoneIdStr, label) ->
+                    val zoneId     = ZoneId.of(zoneIdStr)
+                    val isSelected = zoneId == currentZone
+                    val offset     = zoneId.utcOffsetLabel()
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onSelect(zoneId); onDismiss() }
+                            .padding(vertical = 10.dp, horizontal = 4.dp),
+                    ) {
+                        Text(
+                            text  = if (isSelected) "✦  " else "     ",
+                            color = Gold,
+                            fontSize = 10.sp,
+                        )
+                        Column {
+                            Text(
+                                text  = label,
+                                color = if (isSelected) Gold else StarWhite,
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                            )
+                            Text(
+                                text  = offset,
+                                color = DimWhite,
+                                style = MaterialTheme.typography.labelSmall,
+                            )
+                        }
+                    }
+                    if (zoneIdStr != COMMON_ZONES.last().first) {
+                        HorizontalDivider(color = DimWhite.copy(alpha = 0.08f))
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel", color = DimWhite, style = MaterialTheme.typography.bodySmall)
+            }
+        },
+    )
 }
 
 @Composable
