@@ -85,6 +85,19 @@ import androidx.compose.ui.graphics.drawscope.withTransform
 
 private val TIME_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm zzz")
 
+private val PLANET_GLYPHS = mapOf(
+    "SUN"     to "☉",
+    "MOON"    to "☽",
+    "MERCURY" to "☿",
+    "VENUS"   to "♀",
+    "MARS"    to "♂",
+    "JUPITER" to "♃",
+    "SATURN"  to "♄",
+    "URANUS"  to "♅",
+    "NEPTUNE" to "♆",
+    "PLUTO"   to "♇",
+)
+
 private val POSITION_LABELS = listOf(
     "I — Self & Present",
     "II — Action & Will",
@@ -267,6 +280,19 @@ fun FlippingTarotCard(
                     style    = MaterialTheme.typography.labelSmall,
                     color    = ReversedRed.copy(alpha = 0.7f),
                     fontSize = 8.sp,
+                )
+            }
+            weightedCard.primaryInfluence?.let { planet ->
+                val glyph  = PLANET_GLYPHS[planet.uppercase()] ?: ""
+                val label  = planet.lowercase().replaceFirstChar { it.uppercase() }
+                val marker = weightedCard.reversalMarker ?: ""
+                Text(
+                    text      = "$glyph $label $marker".trim(),
+                    style     = MaterialTheme.typography.labelSmall,
+                    color     = if (weightedCard.reversed) TensionRose.copy(alpha = 0.65f)
+                                else Gold.copy(alpha = 0.60f),
+                    textAlign = TextAlign.Center,
+                    fontSize  = 8.sp,
                 )
             }
         }
@@ -587,6 +613,7 @@ private fun CardDetailDialog(
                         letterSpacing = 2.sp,
                     )
                 }
+                PlanetInfluenceLabel(wc)
 
                 Spacer(Modifier.height(12.dp))
 
@@ -613,6 +640,56 @@ private fun CardDetailDialog(
                     Text("CLOSE", color = DimWhite, letterSpacing = 2.sp)
                 }
             }
+        }
+    }
+}
+
+// ── Planet influence label ────────────────────────────────────────────────────
+
+@Composable
+private fun PlanetInfluenceLabel(wc: WeightedCard) {
+    val planet = wc.primaryInfluence ?: return
+    val glyph  = PLANET_GLYPHS[planet.uppercase()] ?: ""
+    val name   = planet.lowercase().replaceFirstChar { it.uppercase() }
+
+    if (wc.reversed) {
+        val marker     = wc.reversalMarker ?: ""
+        val flavorText = when (wc.reversalMarker) {
+            "℞"  -> "retrograde — resisting this card's emergence"
+            "□"  -> "in square tension — this card appears against its current"
+            "☍"  -> "in opposition — this card appears under resistance"
+            else -> "in tension — this card appears against the current sky"
+        }
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(
+                text  = "$glyph  $name  $marker".trim(),
+                color = TensionRose.copy(alpha = 0.85f),
+                style = MaterialTheme.typography.bodySmall,
+                letterSpacing = 1.sp,
+            )
+            Text(
+                text      = flavorText,
+                color     = DimWhite,
+                style     = MaterialTheme.typography.labelSmall,
+                fontStyle = FontStyle.Italic,
+                textAlign = TextAlign.Center,
+            )
+        }
+    } else {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(
+                text  = "$glyph  $name",
+                color = Gold.copy(alpha = 0.85f),
+                style = MaterialTheme.typography.bodySmall,
+                letterSpacing = 1.sp,
+            )
+            Text(
+                text      = "strongest planetary influence in this reading",
+                color     = DimWhite,
+                style     = MaterialTheme.typography.labelSmall,
+                fontStyle = FontStyle.Italic,
+                textAlign = TextAlign.Center,
+            )
         }
     }
 }

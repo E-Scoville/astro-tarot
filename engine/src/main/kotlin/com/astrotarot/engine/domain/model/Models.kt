@@ -70,7 +70,12 @@ data class LocationCoordinates(
 data class WeightedCard(
     val card: TarotCard,
     val weight: Double,
-    val reversed: Boolean
+    val reversed: Boolean,
+    // Upright: the planet whose transit most strongly called this card.
+    // Reversed: the planet in the sky most responsible for the resistance (retrograde or tension aspect).
+    val primaryInfluence: String? = null,
+    // Non-null only for reversed cards: "℞", "□", or "☍" indicating the flavour of resistance.
+    val reversalMarker: String? = null,
 )
 
 enum class AspectType(

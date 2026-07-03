@@ -14,47 +14,66 @@ class TarotAstrologyEngine(private val deck: List<TarotCard>) {
         val planetLookup = transits.associateBy { it.planet }
 
         val weights = deck.map { card ->
-            val transitWeight = calculateTransitWeight(card, transits)
-            val aspectBonus   = calculateAspectBonus(card, aspects, planetLookup)
-            card to (transitWeight + aspectBonus)
+            val (transitWeight, topPlanet) = calculateTransitWeight(card, transits)
+            val aspectBonus               = calculateAspectBonus(card, aspects, planetLookup)
+            Triple(card, transitWeight + aspectBonus, topPlanet)
         }
 
         val avgWeight = weights.map { it.second }.average()
-        val drawn = weightedRandomSample(weights, cardsToDraw, random)
+        val drawn = weightedRandomSample(
+            weights.map { (card, w, _) -> card to w },
+            cardsToDraw, random,
+        )
+        val influenceMap = weights.associate { (card, _, planet) -> card to planet }
         return drawn.map { (card, weight) ->
-            WeightedCard(card, weight, reversed = weight < avgWeight)
+            val reversed = weight < avgWeight
+            if (reversed) {
+                val (rPlanet, rMarker) = findReversalInfluence(card, transits, aspects)
+                WeightedCard(card, weight, reversed = true,
+                    primaryInfluence = rPlanet, reversalMarker = rMarker)
+            } else {
+                WeightedCard(card, weight, reversed = false,
+                    primaryInfluence = influenceMap[card])
+            }
         }
     }
 
-    // ── Transit weighting (unchanged from Phase 1) ────────────────────────────
+    // ── Transit weighting ─────────────────────────────────────────────────────
+    // Returns total weight and the name of the planet that contributed most.
 
-    private fun calculateTransitWeight(card: TarotCard, transits: List<PlanetPosition>): Double {
-        var weight = 1.0
+    private fun calculateTransitWeight(
+        card: TarotCard,
+        transits: List<PlanetPosition>,
+    ): Pair<Double, String?> {
+        var totalWeight = 1.0
+        var topPlanet: String? = null
+        var topContrib = 0.0
 
         for (transit in transits) {
             val body = transit.planet.uppercase()
             val sign = runCatching { ZodiacSign.valueOf(transit.sign.uppercase()) }.getOrNull()
             val inAngular = transit.house in ANGULAR_HOUSES
 
-            when (card.type) {
+            val contrib = when (card.type) {
                 ArcanaType.MAJOR -> {
+                    var c = 0.0
                     if (card.associatedBody?.name == body) {
-                        weight += 1.5
-                        if (inAngular) weight += 1.0
-                        if (transit.isRetrograde) weight += 0.5
+                        c += 1.5
+                        if (inAngular) c += 1.0
+                        if (transit.isRetrograde) c += 0.5
                     }
                     if (sign != null && card.associatedSign == sign) {
-                        weight += 0.75
-                        if (inAngular) weight += 0.5
+                        c += 0.75
+                        if (inAngular) c += 0.5
                     }
+                    c
                 }
                 ArcanaType.MINOR_NUMBERED -> {
                     val inRange = card.longitudeRangeStart != null &&
                             inLongitudeRange(transit.longitude, card.longitudeRangeStart, card.longitudeRangeEnd!!)
                     val bodyMatches = card.associatedBody?.name == body
                     val signMatches = sign != null && card.associatedSign == sign
-
-                    weight += when {
+                    when {
                         inRange && bodyMatches -> 3.0
                         bodyMatches && signMatches -> 1.5
                         signMatches -> 0.5
@@ -63,24 +82,27 @@ class TarotAstrologyEngine(private val deck: List<TarotCard>) {
                 }
                 ArcanaType.MINOR_ACE -> {
                     if (sign != null && card.suit?.element == sign.element) {
-                        weight += 0.75
-                        if (inAngular) weight += 0.5
-                    }
+                        if (inAngular) 1.25 else 0.75
+                    } else 0.0
                 }
                 ArcanaType.MINOR_COURT -> {
-                    if (card.longitudeRangeStart != null && card.longitudeRangeEnd != null) {
-                        if (inLongitudeRange(transit.longitude, card.longitudeRangeStart, card.longitudeRangeEnd)) {
-                            weight += 2.0
-                            if (inAngular) weight += 0.5
-                        }
+                    if (card.longitudeRangeStart != null && card.longitudeRangeEnd != null &&
+                        inLongitudeRange(transit.longitude, card.longitudeRangeStart, card.longitudeRangeEnd)) {
+                        if (inAngular) 2.5 else 2.0
                     } else if (sign != null && card.suit?.element == sign.element) {
-                        weight += 0.5
-                    }
+                        0.5
+                    } else 0.0
                 }
+            }
+
+            totalWeight += contrib
+            if (contrib > topContrib) {
+                topContrib = contrib
+                topPlanet = transit.planet
             }
         }
 
-        return weight
+        return Pair(totalWeight, topPlanet)
     }
 
     // ── Aspect weighting ──────────────────────────────────────────────────────
@@ -133,6 +155,52 @@ class TarotAstrologyEngine(private val deck: List<TarotCard>) {
             ArcanaType.MINOR_ACE ->
                 sign != null && card.suit?.element == sign.element
         }
+    }
+
+    // ── Reversal influence ────────────────────────────────────────────────────
+    // A reversed card emerged despite low planetary weight. Find what in the
+    // current sky best explains the resistance, in priority order:
+    //   1. The card's own ruling planet is retrograde
+    //   2. The card's ruling planet is in a tension aspect
+    //   3. Any retrograde planet in an angular house
+    //   4. The strongest tension aspect in the sky
+    //   5. Any retrograde planet
+
+    private fun findReversalInfluence(
+        card: TarotCard,
+        transits: List<PlanetPosition>,
+        aspects: List<Aspect>,
+    ): Pair<String?, String?> {
+        fun aspectStrength(a: Aspect) = a.type.weightBonus * (1.0 - a.orb / a.type.orb)
+
+        card.associatedBody?.name?.let { cardPlanet ->
+            // 1. Card's ruling planet is retrograde
+            transits.find { it.planet.uppercase() == cardPlanet && it.isRetrograde }
+                ?.let { return it.planet to "℞" }
+
+            // 2. Card's ruling planet is in a tension aspect
+            aspects.filter { !it.type.isHarmonious }
+                .filter { it.planet1.uppercase() == cardPlanet || it.planet2.uppercase() == cardPlanet }
+                .maxByOrNull { aspectStrength(it) }
+                ?.let { asp ->
+                    val other = if (asp.planet1.uppercase() == cardPlanet) asp.planet2 else asp.planet1
+                    return other to asp.type.symbol
+                }
+        }
+
+        // 3. Retrograde planet in an angular house
+        transits.filter { it.isRetrograde && it.house in ANGULAR_HOUSES }
+            .firstOrNull()?.let { return it.planet to "℞" }
+
+        // 4. Strongest tension aspect overall
+        aspects.filter { !it.type.isHarmonious }
+            .maxByOrNull { aspectStrength(it) }
+            ?.let { return it.planet1 to it.type.symbol }
+
+        // 5. Any retrograde
+        transits.firstOrNull { it.isRetrograde }?.let { return it.planet to "℞" }
+
+        return null to null
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
