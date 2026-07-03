@@ -1,7 +1,11 @@
 package com.astrotarot.ui.screens
 
 import android.Manifest
+import android.app.DatePickerDialog
+import android.app.TimePickerDialog
 import android.content.pm.PackageManager
+import android.location.Address
+import android.location.Geocoder
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -13,6 +17,8 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -24,78 +30,158 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.astrotarot.ui.ReadingUiState
+import com.astrotarot.ui.theme.CardSurface
 import com.astrotarot.ui.theme.DimWhite
 import com.astrotarot.ui.theme.Gold
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.time.LocalDateTime
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
+import java.util.Calendar
 
 private val LOCATION_PERMISSIONS = arrayOf(
     Manifest.permission.ACCESS_FINE_LOCATION,
     Manifest.permission.ACCESS_COARSE_LOCATION,
 )
 
+private val DISPLAY_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd  HH:mm 'UTC'")
+
+private fun Address.displayName(): String = listOfNotNull(
+    locality ?: featureName,
+    adminArea,
+    countryName,
+).joinToString(", ")
+
 @Composable
 fun WelcomeScreen(
     state: ReadingUiState,
-    onReadingRequested: () -> Unit,
-    onManualCoordinates: (lat: Double, lon: Double) -> Unit,
+    onReadingRequested: (timestamp: Long) -> Unit,
+    onManualCoordinates: (lat: Double, lon: Double, timestamp: Long) -> Unit,
+    onShowInfo: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
-    var showManual by remember { mutableStateOf(false) }
-    var latText by remember { mutableStateOf("") }
-    var lonText by remember { mutableStateOf("") }
-    var inputError by remember { mutableStateOf("") }
+    val scope   = rememberCoroutineScope()
+
+    var showLocation by remember { mutableStateOf(false) }
+    var showTime     by remember { mutableStateOf(false) }
+
+    // Location search state
+    var searchQuery     by remember { mutableStateOf("") }
+    var searchResults   by remember { mutableStateOf<List<Address>>(emptyList()) }
+    var selectedAddress by remember { mutableStateOf<Address?>(null) }
+    var isSearching     by remember { mutableStateOf(false) }
+    var searchError     by remember { mutableStateOf("") }
+
+    // Custom time state — null means "now"
+    var customTime    by remember { mutableStateOf<LocalDateTime?>(null) }
+    var useCustomTime by remember { mutableStateOf(false) }
+
+    fun resolvedTimestamp(): Long =
+        if (useCustomTime && customTime != null)
+            customTime!!.toInstant(ZoneOffset.UTC).toEpochMilli()
+        else
+            System.currentTimeMillis()
 
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
     ) { results ->
         val granted = results[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
                 results[Manifest.permission.ACCESS_COARSE_LOCATION] == true
-        if (granted) onReadingRequested()
-        else showManual = true   // permission denied — offer manual fallback
+        if (granted) onReadingRequested(resolvedTimestamp())
+        else showLocation = true
     }
 
     fun onGpsButtonTapped() {
         val hasPermission = ContextCompat.checkSelfPermission(
             context, Manifest.permission.ACCESS_FINE_LOCATION
         ) == PackageManager.PERMISSION_GRANTED
-        if (hasPermission) onReadingRequested()
+        if (hasPermission) onReadingRequested(resolvedTimestamp())
         else permissionLauncher.launch(LOCATION_PERMISSIONS)
     }
 
-    fun onManualSubmit() {
-        val lat = latText.toDoubleOrNull()
-        val lon = lonText.toDoubleOrNull()
-        when {
-            lat == null || lon == null -> inputError = "Enter valid decimal numbers"
-            lat < -90 || lat > 90     -> inputError = "Latitude must be −90 to 90"
-            lon < -180 || lon > 180   -> inputError = "Longitude must be −180 to 180"
-            else -> { inputError = ""; onManualCoordinates(lat, lon) }
+    fun onSearch() {
+        if (searchQuery.isBlank()) return
+        scope.launch {
+            isSearching = true
+            searchError = ""
+            searchResults = emptyList()
+            selectedAddress = null
+            try {
+                val geocoder = Geocoder(context)
+                val results = withContext(Dispatchers.IO) {
+                    @Suppress("DEPRECATION")
+                    geocoder.getFromLocationName(searchQuery.trim(), 5) ?: emptyList()
+                }
+                if (results.isEmpty()) searchError = "No places found — try a different name"
+                else searchResults = results
+            } catch (e: Exception) {
+                searchError = "Search unavailable. Check your connection."
+            }
+            isSearching = false
         }
+    }
+
+    fun showDateTimePicker() {
+        val base = customTime ?: LocalDateTime.now(ZoneOffset.UTC)
+        val cal = Calendar.getInstance().apply {
+            set(base.year, base.monthValue - 1, base.dayOfMonth, base.hour, base.minute)
+        }
+        DatePickerDialog(
+            context,
+            { _, year, month, day ->
+                TimePickerDialog(
+                    context,
+                    { _, hour, minute ->
+                        customTime = LocalDateTime.of(year, month + 1, day, hour, minute)
+                        useCustomTime = true
+                    },
+                    cal.get(Calendar.HOUR_OF_DAY),
+                    cal.get(Calendar.MINUTE),
+                    true,
+                ).show()
+            },
+            cal.get(Calendar.YEAR),
+            cal.get(Calendar.MONTH),
+            cal.get(Calendar.DAY_OF_MONTH),
+        ).show()
     }
 
     Box(
@@ -131,7 +217,15 @@ fun WelcomeScreen(
                 lineHeight = 22.sp,
             )
 
-            Spacer(Modifier.height(48.dp))
+            TextButton(onClick = onShowInfo) {
+                Text(
+                    text = "How does this work?",
+                    color = Gold.copy(alpha = 0.7f),
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+
+            Spacer(Modifier.height(32.dp))
 
             Button(
                 onClick = ::onGpsButtonTapped,
@@ -148,18 +242,162 @@ fun WelcomeScreen(
 
             Spacer(Modifier.height(8.dp))
 
-            TextButton(onClick = { showManual = !showManual }) {
+            // ── Location search toggle ────────────────────────────────
+            TextButton(onClick = { showLocation = !showLocation }) {
                 Text(
-                    text = if (showManual) "▲ Hide manual coordinates"
-                           else "▼ Enter coordinates manually",
+                    text = if (showLocation) "▲ Hide location search"
+                           else "▼ Choose a different location",
                     color = DimWhite,
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
 
-            // ── Manual coordinate entry ──────────────────────────────
             AnimatedVisibility(
-                visible = showManual,
+                visible = showLocation,
+                enter = expandVertically(),
+                exit = shrinkVertically(),
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 4.dp),
+                ) {
+                    val fieldColors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor   = Gold,
+                        unfocusedBorderColor = DimWhite,
+                        focusedLabelColor    = Gold,
+                        unfocusedLabelColor  = DimWhite,
+                        cursorColor          = Gold,
+                        focusedTextColor     = MaterialTheme.colorScheme.onBackground,
+                        unfocusedTextColor   = MaterialTheme.colorScheme.onBackground,
+                    )
+
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        OutlinedTextField(
+                            value = searchQuery,
+                            onValueChange = {
+                                searchQuery = it
+                                searchError = ""
+                                if (selectedAddress != null) selectedAddress = null
+                            },
+                            label = { Text("City or place name") },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                            keyboardActions = KeyboardActions(onSearch = { onSearch() }),
+                            colors = fieldColors,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Button(
+                            onClick = ::onSearch,
+                            enabled = searchQuery.isNotBlank() && !isSearching,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.secondary,
+                                contentColor   = MaterialTheme.colorScheme.onSecondary,
+                            ),
+                        ) {
+                            if (isSearching)
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(18.dp),
+                                    strokeWidth = 2.dp,
+                                    color = MaterialTheme.colorScheme.onSecondary,
+                                )
+                            else
+                                Text("Search")
+                        }
+                    }
+
+                    if (searchError.isNotEmpty()) {
+                        Text(
+                            text = searchError,
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.padding(top = 6.dp),
+                        )
+                    }
+
+                    if (searchResults.isNotEmpty()) {
+                        Spacer(Modifier.height(8.dp))
+                        searchResults.forEach { address ->
+                            val isSelected = address == selectedAddress
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 3.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(if (isSelected) CardSurface else CardSurface.copy(alpha = 0.5f))
+                                    .border(
+                                        width = 1.dp,
+                                        color = if (isSelected) Gold else DimWhite.copy(alpha = 0.2f),
+                                        shape = RoundedCornerShape(8.dp),
+                                    )
+                                    .clickable { selectedAddress = address }
+                                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                            ) {
+                                Text(
+                                    text = if (isSelected) "✦  " else "    ",
+                                    color = Gold,
+                                    style = MaterialTheme.typography.bodySmall,
+                                )
+                                Text(
+                                    text = address.displayName(),
+                                    color = if (isSelected) Gold else DimWhite,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                        }
+                    }
+
+                    if (selectedAddress != null) {
+                        Spacer(Modifier.height(10.dp))
+                        Button(
+                            onClick = {
+                                val a = selectedAddress ?: return@Button
+                                onManualCoordinates(a.latitude, a.longitude, resolvedTimestamp())
+                            },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.secondary,
+                                contentColor   = MaterialTheme.colorScheme.onSecondary,
+                            ),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(48.dp),
+                        ) {
+                            Text(
+                                "DRAW FOR ${selectedAddress!!.displayName().uppercase()}",
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = 1.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
+                }
+            }
+
+            // ── Historical / future time toggle ───────────────────────
+            HorizontalDivider(
+                modifier = Modifier.padding(vertical = 8.dp),
+                color = DimWhite.copy(alpha = 0.2f),
+            )
+
+            TextButton(onClick = { showTime = !showTime }) {
+                Text(
+                    text = if (showTime) "▲ Hide time selection"
+                           else "▼ Choose a different time",
+                    color = DimWhite,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+
+            AnimatedVisibility(
+                visible = showTime,
                 enter = expandVertically(),
                 exit = shrinkVertically(),
             ) {
@@ -167,70 +405,67 @@ fun WelcomeScreen(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(top = 8.dp),
+                        .padding(top = 4.dp),
                 ) {
-                    val fieldColors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = Gold,
-                        unfocusedBorderColor = DimWhite,
-                        focusedLabelColor = Gold,
-                        unfocusedLabelColor = DimWhite,
-                        cursorColor = Gold,
-                        focusedTextColor = MaterialTheme.colorScheme.onBackground,
-                        unfocusedTextColor = MaterialTheme.colorScheme.onBackground,
-                    )
                     Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
                         modifier = Modifier.fillMaxWidth(),
                     ) {
-                        OutlinedTextField(
-                            value = latText,
-                            onValueChange = { latText = it; inputError = "" },
-                            label = { Text("Latitude") },
-                            placeholder = { Text("40.04", color = DimWhite) },
-                            singleLine = true,
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                            colors = fieldColors,
-                            modifier = Modifier.weight(1f),
-                        )
-                        OutlinedTextField(
-                            value = lonText,
-                            onValueChange = { lonText = it; inputError = "" },
-                            label = { Text("Longitude") },
-                            placeholder = { Text("-111.73", color = DimWhite) },
-                            singleLine = true,
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                            colors = fieldColors,
-                            modifier = Modifier.weight(1f),
-                        )
-                    }
-
-                    if (inputError.isNotEmpty()) {
                         Text(
-                            text = inputError,
-                            color = MaterialTheme.colorScheme.error,
+                            text = "Use current time",
+                            color = DimWhite,
                             style = MaterialTheme.typography.bodySmall,
-                            modifier = Modifier.padding(top = 4.dp),
+                        )
+                        Switch(
+                            checked = !useCustomTime,
+                            onCheckedChange = { nowSelected ->
+                                useCustomTime = !nowSelected
+                                if (!nowSelected && customTime == null) showDateTimePicker()
+                            },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor   = MaterialTheme.colorScheme.primary,
+                                checkedTrackColor   = MaterialTheme.colorScheme.primaryContainer,
+                                uncheckedThumbColor = DimWhite,
+                                uncheckedTrackColor = DimWhite.copy(alpha = 0.3f),
+                            ),
                         )
                     }
 
                     Spacer(Modifier.height(8.dp))
 
-                    Button(
-                        onClick = ::onManualSubmit,
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.secondary,
-                            contentColor = MaterialTheme.colorScheme.onSecondary,
+                    OutlinedButton(
+                        onClick = ::showDateTimePicker,
+                        modifier = Modifier.fillMaxWidth(),
+                        border = androidx.compose.foundation.BorderStroke(
+                            1.dp,
+                            if (useCustomTime) Gold else DimWhite.copy(alpha = 0.4f),
                         ),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(48.dp),
                     ) {
-                        Text("USE THESE COORDINATES", fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+                        Text(
+                            text = if (useCustomTime && customTime != null)
+                                customTime!!.format(DISPLAY_FMT)
+                            else
+                                "Select date & time (UTC)",
+                            color = if (useCustomTime) Gold else DimWhite,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+
+                    if (useCustomTime && customTime != null) {
+                        Spacer(Modifier.height(4.dp))
+                        TextButton(onClick = { useCustomTime = false; customTime = null }) {
+                            Text(
+                                "✕  Clear — use current time",
+                                color = DimWhite,
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
                     }
                 }
             }
 
-            // ── Error message ────────────────────────────────────────
+            // ── Error message ─────────────────────────────────────────
             if (state is ReadingUiState.Error) {
                 Spacer(Modifier.height(16.dp))
                 Text(

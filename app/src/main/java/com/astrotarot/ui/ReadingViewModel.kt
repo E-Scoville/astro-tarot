@@ -49,7 +49,7 @@ class ReadingViewModel(app: Application) : AndroidViewModel(app) {
     private val _state = MutableStateFlow<ReadingUiState>(ReadingUiState.Idle)
     val state: StateFlow<ReadingUiState> = _state.asStateFlow()
 
-    fun startReading() {
+    fun startReading(timestamp: Long = System.currentTimeMillis()) {
         if (_state.value is ReadingUiState.FetchingLocation ||
             _state.value is ReadingUiState.Calculating) return
 
@@ -58,7 +58,7 @@ class ReadingViewModel(app: Application) : AndroidViewModel(app) {
             try {
                 val (lat, lon) = fetchCoordinates()
                 _state.value = ReadingUiState.Calculating
-                val result = withContext(Dispatchers.Default) { buildReading(lat, lon) }
+                val result = withContext(Dispatchers.Default) { buildReading(lat, lon, timestamp) }
                 _state.value = result
             } catch (e: Exception) {
                 _state.value = ReadingUiState.Error(e.message ?: "Location unavailable")
@@ -67,13 +67,13 @@ class ReadingViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** Skip GPS entirely and use manually entered coordinates. */
-    fun startReadingAt(lat: Double, lon: Double) {
+    fun startReadingAt(lat: Double, lon: Double, timestamp: Long = System.currentTimeMillis()) {
         if (_state.value is ReadingUiState.FetchingLocation ||
             _state.value is ReadingUiState.Calculating) return
 
         viewModelScope.launch {
             _state.value = ReadingUiState.Calculating
-            val result = withContext(Dispatchers.Default) { buildReading(lat, lon) }
+            val result = withContext(Dispatchers.Default) { buildReading(lat, lon, timestamp) }
             _state.value = result
         }
     }
@@ -103,9 +103,8 @@ class ReadingViewModel(app: Application) : AndroidViewModel(app) {
             ?: throw Exception("Could not determine location.\nTry entering coordinates manually.")
     }
 
-    private fun buildReading(lat: Double, lon: Double): ReadingUiState.Success {
-        val now     = System.currentTimeMillis()
-        val astro   = LocalEphemerisCalculator.calculate(lat, lon, now)
+    private fun buildReading(lat: Double, lon: Double, timestamp: Long = System.currentTimeMillis()): ReadingUiState.Success {
+        val astro   = LocalEphemerisCalculator.calculate(lat, lon, timestamp)
         val aspects = AspectCalculator.calculate(astro.positions)
         val reading = engine.generateWeightedReading(astro.positions, cardsToDraw = 3)
         return ReadingUiState.Success(
@@ -116,7 +115,7 @@ class ReadingViewModel(app: Application) : AndroidViewModel(app) {
             midheavenDegree = astro.midheavenDegree,
             lat             = lat,
             lon             = lon,
-            timestamp       = now,
+            timestamp       = timestamp,
         )
     }
 
