@@ -2,28 +2,28 @@ package com.astrotarot.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-// Warm dark backgrounds — deep walnut / mahogany
-val DeepNavy      = Color(0xFF1A0C04)   // deepest warm brown (background)
-val MidnightBlue  = Color(0xFF2A1508)   // rich mahogany (surface)
-val CardSurface   = Color(0xFF3D2314)   // warm brown (card / panel surface)
-val CardBack      = Color(0xFF130801)   // near-black warm (card back)
+// Deep velvety blue backgrounds
+val MidnightVelvet = Color(0xFF0D1428)   // background — deep midnight blue
+val IndigoSurface  = Color(0xFF1A2340)   // surface — indigo panel
+val IndigoCard     = Color(0xFF232D4F)   // card/panel surface (raised)
+val CardBack       = Color(0xFF0A0F1E)   // card back — near-black blue
 
-// Amber gold accents — warmer, less metallic
-val Gold          = Color(0xFFC9A055)
-val SoftGold      = Color(0xFFDDB870)
-val DimGold       = Color(0xFF6B5020)
+// Metallic gold accents
+val Gold           = Color(0xFFD4AF37)   // classic metallic gold (primary)
+val PaleGold       = Color(0xFFF0DCA0)   // highlight — for gradient shimmer
+val DeepGold       = Color(0xFF8A6D1F)   // shadow gold / containers
 
-// Art Nouveau botanical greens — replace cold purple
-val MysticPurple  = Color(0xFF4A7A52)   // deep forest green (secondary action)
-val LightPurple   = Color(0xFF7A9E7E)   // sage green (secondary on-color)
+// Velvety red secondary
+val Oxblood        = Color(0xFF6B1F2A)   // deep oxblood (secondary, reversal accent)
+val RoseGold       = Color(0xFFC48A7A)   // soft rose metallic (tension aspects)
 
-// Text — warm ivory instead of stark white
-val StarWhite     = Color(0xFFF5ECD7)   // warm ivory
-val DimWhite      = Color(0xFF9E8E76)   // muted warm ivory (secondary text)
+// Text
+val Ivory          = Color(0xFFF2EBDD)   // primary text — warm ivory
+val DimIvory       = Color(0xFF8E93A8)   // secondary text — cool muted ivory-blue
 
 // Aspect indicators
-val HarmonyTeal   = Color(0xFF7A9E7E)   // sage green (harmonious aspects)
-val TensionRose   = Color(0xFFC47A72)   // dusty rose (tense aspects)
+val HarmonyTeal    = Color(0xFF6FA08F)   // muted teal-green (harmonious aspects)
+val TensionRose    = Color(0xFFC48A7A)   // same as RoseGold (tense aspects)
 
 // Reversed card tint
-val ReversedRed   = Color(0xFFA84848)   // deep burgundy
+val ReversedRed    = Color(0xFF9E3040)   // rich crimson-oxblood

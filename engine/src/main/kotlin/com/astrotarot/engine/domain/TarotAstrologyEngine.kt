@@ -8,9 +8,9 @@ class TarotAstrologyEngine(private val deck: List<TarotCard>) {
     fun generateWeightedReading(
         transits: List<PlanetPosition>,
         cardsToDraw: Int,
+        aspects: List<Aspect> = AspectCalculator.calculate(transits),
         random: Random = Random.Default
     ): List<WeightedCard> {
-        val aspects = AspectCalculator.calculate(transits)
         val planetLookup = transits.associateBy { it.planet }
 
         val weights = deck.map { card ->
@@ -44,20 +44,19 @@ class TarotAstrologyEngine(private val deck: List<TarotCard>) {
     private fun calculateTransitWeight(
         card: TarotCard,
         transits: List<PlanetPosition>,
-    ): Pair<Double, String?> {
+    ): Pair<Double, CelestialBody?> {
         var totalWeight = 1.0
-        var topPlanet: String? = null
+        var topPlanet: CelestialBody? = null
         var topContrib = 0.0
 
         for (transit in transits) {
-            val body = transit.planet.uppercase()
             val sign = runCatching { ZodiacSign.valueOf(transit.sign.uppercase()) }.getOrNull()
             val inAngular = transit.house in ANGULAR_HOUSES
 
             val contrib = when (card.type) {
                 ArcanaType.MAJOR -> {
                     var c = 0.0
-                    if (card.associatedBody?.name == body) {
+                    if (card.associatedBody == transit.planet) {
                         c += 1.5
                         if (inAngular) c += 1.0
                         if (transit.isRetrograde) c += 0.5
@@ -71,7 +70,7 @@ class TarotAstrologyEngine(private val deck: List<TarotCard>) {
                 ArcanaType.MINOR_NUMBERED -> {
                     val inRange = card.longitudeRangeStart != null &&
                             inLongitudeRange(transit.longitude, card.longitudeRangeStart, card.longitudeRangeEnd!!)
-                    val bodyMatches = card.associatedBody?.name == body
+                    val bodyMatches = card.associatedBody == transit.planet
                     val signMatches = sign != null && card.associatedSign == sign
                     when {
                         inRange && bodyMatches -> 3.0
@@ -110,7 +109,7 @@ class TarotAstrologyEngine(private val deck: List<TarotCard>) {
     private fun calculateAspectBonus(
         card: TarotCard,
         aspects: List<Aspect>,
-        planetLookup: Map<String, PlanetPosition>
+        planetLookup: Map<CelestialBody, PlanetPosition>
     ): Double {
         var bonus = 0.0
 
@@ -139,11 +138,11 @@ class TarotAstrologyEngine(private val deck: List<TarotCard>) {
         val sign = runCatching { ZodiacSign.valueOf(planet.sign.uppercase()) }.getOrNull()
         return when (card.type) {
             ArcanaType.MAJOR ->
-                card.associatedBody?.name == planet.planet ||
+                card.associatedBody == planet.planet ||
                 (sign != null && card.associatedSign == sign)
 
             ArcanaType.MINOR_NUMBERED ->
-                card.associatedBody?.name == planet.planet ||
+                card.associatedBody == planet.planet ||
                 (sign != null && card.associatedSign == sign) ||
                 (card.longitudeRangeStart != null &&
                         inLongitudeRange(planet.longitude, card.longitudeRangeStart, card.longitudeRangeEnd!!))
@@ -170,20 +169,20 @@ class TarotAstrologyEngine(private val deck: List<TarotCard>) {
         card: TarotCard,
         transits: List<PlanetPosition>,
         aspects: List<Aspect>,
-    ): Pair<String?, String?> {
+    ): Pair<CelestialBody?, String?> {
         fun aspectStrength(a: Aspect) = a.type.weightBonus * (1.0 - a.orb / a.type.orb)
 
-        card.associatedBody?.name?.let { cardPlanet ->
+        card.associatedBody?.let { cardPlanet ->
             // 1. Card's ruling planet is retrograde
-            transits.find { it.planet.uppercase() == cardPlanet && it.isRetrograde }
+            transits.find { it.planet == cardPlanet && it.isRetrograde }
                 ?.let { return it.planet to "℞" }
 
             // 2. Card's ruling planet is in a tension aspect
             aspects.filter { !it.type.isHarmonious }
-                .filter { it.planet1.uppercase() == cardPlanet || it.planet2.uppercase() == cardPlanet }
+                .filter { it.planet1 == cardPlanet || it.planet2 == cardPlanet }
                 .maxByOrNull { aspectStrength(it) }
                 ?.let { asp ->
-                    val other = if (asp.planet1.uppercase() == cardPlanet) asp.planet2 else asp.planet1
+                    val other = if (asp.planet1 == cardPlanet) asp.planet2 else asp.planet1
                     return other to asp.type.symbol
                 }
         }

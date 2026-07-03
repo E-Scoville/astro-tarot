@@ -19,7 +19,7 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.astrotarot.ui.theme.DimWhite
+import com.astrotarot.ui.theme.DimIvory
 import com.astrotarot.ui.theme.Gold
 
 @Composable
@@ -56,7 +56,7 @@ fun InfoScreen(
         Text(
             text = "The theory behind the readings",
             style = MaterialTheme.typography.bodySmall,
-            color = DimWhite,
+            color = DimIvory,
             fontStyle = FontStyle.Italic,
         )
 
@@ -120,14 +120,14 @@ fun InfoScreen(
 
         Spacer(Modifier.height(32.dp))
 
-        HorizontalDivider(color = DimWhite.copy(alpha = 0.2f))
+        HorizontalDivider(color = DimIvory.copy(alpha = 0.2f))
 
         Spacer(Modifier.height(16.dp))
 
         Text(
             text = "Card attributions follow the Western Hermetic tradition. Card imagery is from the Rider-Waite-Smith deck (1909), now in the public domain.",
             style = MaterialTheme.typography.bodySmall,
-            color = DimWhite.copy(alpha = 0.5f),
+            color = DimIvory.copy(alpha = 0.5f),
             fontStyle = FontStyle.Italic,
             lineHeight = 18.sp,
         )
@@ -149,10 +149,10 @@ private fun InfoSection(title: String, body: String) {
     Text(
         text = body,
         style = MaterialTheme.typography.bodyMedium,
-        color = DimWhite,
+        color = DimIvory,
         lineHeight = 22.sp,
     )
     Spacer(Modifier.height(24.dp))
-    HorizontalDivider(color = DimWhite.copy(alpha = 0.15f))
+    HorizontalDivider(color = DimIvory.copy(alpha = 0.15f))
     Spacer(Modifier.height(24.dp))
 }

@@ -34,7 +34,7 @@ enum class ArcanaType { MAJOR, MINOR_NUMBERED, MINOR_ACE, MINOR_COURT }
 
 @Serializable
 data class PlanetPosition(
-    val planet: String,
+    val planet: CelestialBody,
     val sign: String,
     val longitude: Double,
     val house: Int,
@@ -73,7 +73,7 @@ data class WeightedCard(
     val reversed: Boolean,
     // Upright: the planet whose transit most strongly called this card.
     // Reversed: the planet in the sky most responsible for the resistance (retrograde or tension aspect).
-    val primaryInfluence: String? = null,
+    val primaryInfluence: CelestialBody? = null,
     // Non-null only for reversed cards: "℞", "□", or "☍" indicating the flavour of resistance.
     val reversalMarker: String? = null,
 )
@@ -94,8 +94,8 @@ enum class AspectType(
 }
 
 data class Aspect(
-    val planet1: String,
-    val planet2: String,
+    val planet1: CelestialBody,
+    val planet2: CelestialBody,
     val type: AspectType,
     val orb: Double   // degrees from exact
 )

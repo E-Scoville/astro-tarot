@@ -14,6 +14,8 @@ import com.astrotarot.engine.domain.model.WeightedCard
 import com.google.android.gms.location.CurrentLocationRequest
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
+import com.google.android.gms.tasks.CancellationTokenSource
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -60,6 +62,8 @@ class ReadingViewModel(app: Application) : AndroidViewModel(app) {
                 _state.value = ReadingUiState.Calculating
                 val result = withContext(Dispatchers.Default) { buildReading(lat, lon, timestamp) }
                 _state.value = result
+            } catch (e: CancellationException) {
+                throw e   // never swallow cancellation — structured concurrency depends on it
             } catch (e: Exception) {
                 _state.value = ReadingUiState.Error(e.message ?: "Location unavailable")
             }
@@ -84,20 +88,22 @@ class ReadingViewModel(app: Application) : AndroidViewModel(app) {
         // mock locations (adb emu geo fix) and is cheaper than a fresh fix.
         val last = suspendCancellableCoroutine<android.location.Location?> { cont ->
             fusedClient.lastLocation
-                .addOnSuccessListener { cont.resume(it) }
-                .addOnFailureListener { cont.resume(null) }
+                .addOnSuccessListener { if (cont.isActive) cont.resume(it) }
+                .addOnFailureListener { if (cont.isActive) cont.resume(null) }
         }
         if (last != null) return last.latitude to last.longitude
 
         // Fall back to a fresh location fix (real device, cold GPS).
         val fresh = suspendCancellableCoroutine<android.location.Location?> { cont ->
+            val cts = CancellationTokenSource()
+            cont.invokeOnCancellation { cts.cancel() }
             val request = CurrentLocationRequest.Builder()
                 .setPriority(Priority.PRIORITY_HIGH_ACCURACY)
                 .setDurationMillis(15_000L)
                 .build()
-            fusedClient.getCurrentLocation(request, null)
-                .addOnSuccessListener { cont.resume(it) }
-                .addOnFailureListener { cont.resumeWithException(it) }
+            fusedClient.getCurrentLocation(request, cts.token)
+                .addOnSuccessListener { if (cont.isActive) cont.resume(it) }
+                .addOnFailureListener { if (cont.isActive) cont.resumeWithException(it) }
         }
         return fresh?.latitude?.let { it to fresh.longitude }
             ?: throw Exception("Could not determine location.\nTry entering coordinates manually.")
@@ -106,7 +112,7 @@ class ReadingViewModel(app: Application) : AndroidViewModel(app) {
     private fun buildReading(lat: Double, lon: Double, timestamp: Long = System.currentTimeMillis()): ReadingUiState.Success {
         val astro   = LocalEphemerisCalculator.calculate(lat, lon, timestamp)
         val aspects = AspectCalculator.calculate(astro.positions)
-        val reading = engine.generateWeightedReading(astro.positions, cardsToDraw = 3)
+        val reading = engine.generateWeightedReading(astro.positions, cardsToDraw = 3, aspects = aspects)
         return ReadingUiState.Success(
             reading         = reading,
             positions       = astro.positions,

@@ -9,6 +9,7 @@ import android.location.Geocoder
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -16,6 +17,8 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -32,7 +35,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -57,10 +59,14 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.scale
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
@@ -68,13 +74,16 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
+import com.astrotarot.R
 import com.astrotarot.ui.ReadingUiState
 import com.astrotarot.ui.artNouveauBackground
-import com.astrotarot.ui.theme.CardSurface
-import com.astrotarot.ui.theme.DimWhite
+import com.astrotarot.ui.theme.DimIvory
 import com.astrotarot.ui.theme.Gold
-import com.astrotarot.ui.theme.MidnightBlue
-import com.astrotarot.ui.theme.StarWhite
+import com.astrotarot.ui.theme.GoldFrameBrush
+import com.astrotarot.ui.theme.GoldTextBrush
+import com.astrotarot.ui.theme.IndigoCard
+import com.astrotarot.ui.theme.IndigoSurface
+import com.astrotarot.ui.theme.Ivory
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -214,9 +223,11 @@ fun WelcomeScreen(
         }
         DatePickerDialog(
             context,
+            R.style.AstroPickerDialog,
             { _, year, month, day ->
                 TimePickerDialog(
                     context,
+                    R.style.AstroPickerDialog,
                     { _, hour, minute ->
                         customTime = LocalDateTime.of(year, month + 1, day, hour, minute)
                         useCustomTime = true
@@ -252,15 +263,14 @@ fun WelcomeScreen(
             verticalArrangement = Arrangement.Center,
             modifier = Modifier.padding(32.dp),
         ) {
-            PulsingOrb()
+            CelestialRosette()
 
-            Spacer(Modifier.height(32.dp))
+            Spacer(Modifier.height(36.dp))
 
             Text(
                 text = "ASTRO TAROT",
-                style = MaterialTheme.typography.displaySmall,
+                style = MaterialTheme.typography.displaySmall.copy(brush = GoldTextBrush),
                 fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.primary,
                 letterSpacing = 6.sp,
             )
 
@@ -269,7 +279,7 @@ fun WelcomeScreen(
             Text(
                 text = "The positions of the planets\nat this exact moment determine\nwhich cards appear.",
                 style = MaterialTheme.typography.bodyMedium,
-                color = DimWhite,
+                color = DimIvory,
                 textAlign = TextAlign.Center,
                 lineHeight = 24.sp,
             )
@@ -292,17 +302,19 @@ fun WelcomeScreen(
                 )
             }
 
-            Spacer(Modifier.height(32.dp))
+            Spacer(Modifier.height(40.dp))
 
-            Button(
+            OutlinedButton(
                 onClick = ::onGpsButtonTapped,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    contentColor   = MaterialTheme.colorScheme.onPrimary,
+                shape  = RoundedCornerShape(4.dp),
+                border = BorderStroke(1.5.dp, GoldFrameBrush),
+                colors = ButtonDefaults.outlinedButtonColors(
+                    containerColor = IndigoSurface.copy(alpha = 0.4f),
+                    contentColor   = Gold,
                 ),
                 modifier = Modifier.fillMaxWidth().height(52.dp),
             ) {
-                Text("DRAW A READING", fontWeight = FontWeight.Bold, letterSpacing = 2.sp)
+                Text("✦  DRAW A READING  ✦", fontWeight = FontWeight.Bold, letterSpacing = 2.sp)
             }
 
             Spacer(Modifier.height(8.dp))
@@ -310,10 +322,11 @@ fun WelcomeScreen(
             // ── Location search toggle ────────────────────────────────
             TextButton(onClick = { showLocation = !showLocation }) {
                 Text(
-                    text = if (showLocation) "▲ Hide location search"
-                           else "▼ Choose a different location",
-                    color = DimWhite,
+                    text = if (showLocation) "⌃ Hide location search"
+                           else "⌄ Choose a different location",
+                    color = DimIvory,
                     style = MaterialTheme.typography.bodySmall,
+                    fontStyle = FontStyle.Italic,
                 )
             }
 
@@ -321,9 +334,9 @@ fun WelcomeScreen(
                 Column(modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) {
                     val fieldColors = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor   = Gold,
-                        unfocusedBorderColor = DimWhite,
+                        unfocusedBorderColor = DimIvory,
                         focusedLabelColor    = Gold,
-                        unfocusedLabelColor  = DimWhite,
+                        unfocusedLabelColor  = DimIvory,
                         cursorColor          = Gold,
                         focusedTextColor     = MaterialTheme.colorScheme.onBackground,
                         unfocusedTextColor   = MaterialTheme.colorScheme.onBackground,
@@ -350,6 +363,7 @@ fun WelcomeScreen(
                         Button(
                             onClick = ::onSearch,
                             enabled = searchQuery.isNotBlank() && !isSearching,
+                            shape = RoundedCornerShape(4.dp),
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = MaterialTheme.colorScheme.secondary,
                                 contentColor   = MaterialTheme.colorScheme.onSecondary,
@@ -385,15 +399,15 @@ fun WelcomeScreen(
                                     .fillMaxWidth()
                                     .padding(vertical = 3.dp)
                                     .clip(RoundedCornerShape(8.dp))
-                                    .background(if (isSelected) CardSurface else CardSurface.copy(alpha = 0.5f))
-                                    .border(1.dp, if (isSelected) Gold else DimWhite.copy(alpha = 0.2f), RoundedCornerShape(8.dp))
+                                    .background(if (isSelected) IndigoCard else IndigoCard.copy(alpha = 0.5f))
+                                    .border(1.dp, if (isSelected) Gold else DimIvory.copy(alpha = 0.2f), RoundedCornerShape(8.dp))
                                     .clickable { selectedAddress = address }
                                     .padding(horizontal = 12.dp, vertical = 10.dp),
                             ) {
                                 Text(if (isSelected) "✦  " else "    ", color = Gold, style = MaterialTheme.typography.bodySmall)
                                 Text(
                                     text = address.displayName(),
-                                    color = if (isSelected) Gold else DimWhite,
+                                    color = if (isSelected) Gold else DimIvory,
                                     style = MaterialTheme.typography.bodySmall,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
@@ -404,19 +418,21 @@ fun WelcomeScreen(
 
                     if (selectedAddress != null) {
                         Spacer(Modifier.height(10.dp))
-                        Button(
+                        OutlinedButton(
                             onClick = {
-                                val a = selectedAddress ?: return@Button
+                                val a = selectedAddress ?: return@OutlinedButton
                                 onManualCoordinates(a.latitude, a.longitude, resolvedTimestamp())
                             },
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = MaterialTheme.colorScheme.secondary,
-                                contentColor   = MaterialTheme.colorScheme.onSecondary,
+                            shape  = RoundedCornerShape(4.dp),
+                            border = BorderStroke(1.dp, GoldFrameBrush),
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                containerColor = IndigoSurface.copy(alpha = 0.4f),
+                                contentColor   = Gold,
                             ),
                             modifier = Modifier.fillMaxWidth().height(48.dp),
                         ) {
                             Text(
-                                "DRAW FOR ${selectedAddress!!.displayName().uppercase()}",
+                                "✦  DRAW FOR ${selectedAddress!!.displayName().uppercase()}  ✦",
                                 fontWeight = FontWeight.Bold,
                                 letterSpacing = 1.sp,
                                 maxLines = 1,
@@ -428,13 +444,14 @@ fun WelcomeScreen(
             }
 
             // ── Historical / future time toggle ───────────────────────
-            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp), color = DimWhite.copy(alpha = 0.2f))
+            OrnamentalDivider()
 
             TextButton(onClick = { showTime = !showTime }) {
                 Text(
-                    text = if (showTime) "▲ Hide time selection" else "▼ Choose a different time",
-                    color = DimWhite,
+                    text = if (showTime) "⌃ Hide time selection" else "⌄ Choose a different time",
+                    color = DimIvory,
                     style = MaterialTheme.typography.bodySmall,
+                    fontStyle = FontStyle.Italic,
                 )
             }
 
@@ -449,7 +466,7 @@ fun WelcomeScreen(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         modifier = Modifier.fillMaxWidth(),
                     ) {
-                        Text("Use current time", color = DimWhite, style = MaterialTheme.typography.bodySmall)
+                        Text("Use current time", color = DimIvory, style = MaterialTheme.typography.bodySmall)
                         Switch(
                             checked = !useCustomTime,
                             onCheckedChange = { nowSelected ->
@@ -459,8 +476,8 @@ fun WelcomeScreen(
                             colors = SwitchDefaults.colors(
                                 checkedThumbColor   = MaterialTheme.colorScheme.primary,
                                 checkedTrackColor   = MaterialTheme.colorScheme.primaryContainer,
-                                uncheckedThumbColor = DimWhite,
-                                uncheckedTrackColor = DimWhite.copy(alpha = 0.3f),
+                                uncheckedThumbColor = DimIvory,
+                                uncheckedTrackColor = DimIvory.copy(alpha = 0.3f),
                             ),
                         )
                     }
@@ -472,8 +489,9 @@ fun WelcomeScreen(
                     OutlinedButton(
                         onClick = ::showDateTimePicker,
                         modifier = Modifier.fillMaxWidth(),
-                        border = androidx.compose.foundation.BorderStroke(
-                            1.dp, if (useCustomTime) Gold else DimWhite.copy(alpha = 0.4f),
+                        shape = RoundedCornerShape(4.dp),
+                        border = BorderStroke(
+                            1.dp, if (useCustomTime) Gold else DimIvory.copy(alpha = 0.4f),
                         ),
                     ) {
                         Text(
@@ -481,7 +499,7 @@ fun WelcomeScreen(
                                 "${customTime!!.format(DATE_TIME_FMT)}  $zoneOffset"
                             else
                                 "Select date & time",
-                            color = if (useCustomTime) Gold else DimWhite,
+                            color = if (useCustomTime) Gold else DimIvory,
                             style = MaterialTheme.typography.bodySmall,
                         )
                     }
@@ -498,7 +516,7 @@ fun WelcomeScreen(
                             .clickable { showZonePicker = true }
                             .padding(vertical = 8.dp, horizontal = 2.dp),
                     ) {
-                        Text("Timezone", color = DimWhite, style = MaterialTheme.typography.bodySmall)
+                        Text("Timezone", color = DimIvory, style = MaterialTheme.typography.bodySmall)
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
                                 text = "${selectedZone.friendlyLabel()}  ($zoneOffset)",
@@ -507,14 +525,14 @@ fun WelcomeScreen(
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                             )
-                            Text("  ›", color = DimWhite, style = MaterialTheme.typography.bodySmall)
+                            Text("  ›", color = DimIvory, style = MaterialTheme.typography.bodySmall)
                         }
                     }
 
                     if (useCustomTime && customTime != null) {
                         Spacer(Modifier.height(2.dp))
                         TextButton(onClick = { useCustomTime = false; customTime = null }) {
-                            Text("✕  Clear — use current time", color = DimWhite, style = MaterialTheme.typography.bodySmall)
+                            Text("✕  Clear — use current time", color = DimIvory, style = MaterialTheme.typography.bodySmall)
                         }
                     }
                 }
@@ -544,7 +562,9 @@ private fun ZonePickerDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor   = MidnightBlue,
+        containerColor   = IndigoSurface,
+        shape            = RoundedCornerShape(8.dp),
+        modifier         = Modifier.border(1.dp, Gold.copy(alpha = 0.4f), RoundedCornerShape(8.dp)),
         title = {
             Text(
                 "Select Timezone",
@@ -573,52 +593,120 @@ private fun ZonePickerDialog(
                         Column {
                             Text(
                                 text  = label,
-                                color = if (isSelected) Gold else StarWhite,
+                                color = if (isSelected) Gold else Ivory,
                                 style = MaterialTheme.typography.bodySmall,
                                 fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
                             )
                             Text(
                                 text  = offset,
-                                color = DimWhite,
+                                color = DimIvory,
                                 style = MaterialTheme.typography.labelSmall,
                             )
                         }
                     }
                     if (zoneIdStr != COMMON_ZONES.last().first) {
-                        HorizontalDivider(color = DimWhite.copy(alpha = 0.08f))
+                        HorizontalDivider(color = DimIvory.copy(alpha = 0.08f))
                     }
                 }
             }
         },
         confirmButton = {
             TextButton(onClick = onDismiss) {
-                Text("Cancel", color = DimWhite, style = MaterialTheme.typography.bodySmall)
+                Text("Cancel", color = DimIvory, style = MaterialTheme.typography.bodySmall)
             }
         },
     )
 }
 
+// ── Ornamental divider: line ◆ line ──────────────────────────────────────────
+
 @Composable
-private fun PulsingOrb() {
-    val transition = rememberInfiniteTransition(label = "orb")
-    val scale by transition.animateFloat(
-        initialValue = 0.92f, targetValue = 1.08f,
-        animationSpec = infiniteRepeatable(tween(2000), RepeatMode.Reverse),
-        label = "scale",
-    )
-    val alpha by transition.animateFloat(
-        initialValue = 0.6f, targetValue = 1.0f,
-        animationSpec = infiniteRepeatable(tween(2000), RepeatMode.Reverse),
-        label = "alpha",
+private fun OrnamentalDivider() {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+    ) {
+        HorizontalDivider(
+            modifier  = Modifier.weight(1f),
+            color     = DimIvory.copy(alpha = 0.25f),
+            thickness = 1.dp,
+        )
+        Text(
+            text     = "◆",
+            color    = Gold.copy(alpha = 0.5f),
+            fontSize = 8.sp,
+            modifier = Modifier.padding(horizontal = 8.dp),
+        )
+        HorizontalDivider(
+            modifier  = Modifier.weight(1f),
+            color     = DimIvory.copy(alpha = 0.25f),
+            thickness = 1.dp,
+        )
+    }
+}
+
+// ── Celestial rosette: rotating zodiac tick ring with lunar glyphs ────────────
+
+@Composable
+private fun CelestialRosette() {
+    val transition = rememberInfiniteTransition(label = "rosette")
+    val rotation by transition.animateFloat(
+        initialValue = 0f, targetValue = 360f,
+        animationSpec = infiniteRepeatable(
+            tween(60_000, easing = LinearEasing), RepeatMode.Restart,
+        ),
+        label = "rotation",
     )
     Box(
         contentAlignment = Alignment.Center,
-        modifier = Modifier
-            .size(120.dp)
-            .scale(scale)
-            .alpha(alpha)
-            .background(MaterialTheme.colorScheme.primaryContainer, CircleShape),
+        modifier = Modifier.size(130.dp),
     ) {
-        Text("☽ ✦ ☾", fontSize = 28.sp, color = MaterialTheme.colorScheme.primary)
+        Canvas(modifier = Modifier.size(130.dp)) {
+            val radius = size.minDimension / 2f
+            val center = Offset(size.width / 2f, size.height / 2f)
+
+            // Soft radial glow behind everything
+            drawCircle(
+                brush = Brush.radialGradient(
+                    listOf(Gold.copy(alpha = 0.20f), Color.Transparent),
+                    center = center,
+                    radius = radius,
+                ),
+                radius = radius,
+                center = center,
+            )
+
+            // Middle hairline ring (static)
+            drawCircle(
+                color  = Gold.copy(alpha = 0.35f),
+                radius = radius * 0.72f,
+                center = center,
+                style  = Stroke(0.5.dp.toPx()),
+            )
+
+            // Rotating outer ring with 12 zodiac tick marks
+            rotate(rotation, pivot = center) {
+                drawCircle(
+                    color  = Gold.copy(alpha = 0.5f),
+                    radius = radius - 1.dp.toPx(),
+                    center = center,
+                    style  = Stroke(1.dp.toPx()),
+                )
+                val tickOuter = radius - 1.dp.toPx()
+                val tickInner = radius - 7.dp.toPx()
+                for (i in 0 until 12) {
+                    val angle = Math.toRadians(i * 30.0)
+                    val cosA  = kotlin.math.cos(angle).toFloat()
+                    val sinA  = kotlin.math.sin(angle).toFloat()
+                    drawLine(
+                        color = Gold.copy(alpha = 0.7f),
+                        start = Offset(center.x + cosA * tickInner, center.y + sinA * tickInner),
+                        end   = Offset(center.x + cosA * tickOuter, center.y + sinA * tickOuter),
+                        strokeWidth = 1.dp.toPx(),
+                    )
+                }
+            }
+        }
+        Text("☽ ✦ ☾", fontSize = 28.sp, color = Gold)
     }
 }

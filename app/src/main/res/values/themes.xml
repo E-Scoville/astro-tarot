@@ -2,4 +2,12 @@
 <resources>
 
     <style name="Theme.AstroTarot" parent="android:Theme.Material.Light.NoActionBar" />
+
+    <style name="AstroPickerDialog" parent="android:Theme.Material.Dialog">
+        <item name="android:colorAccent">#D4AF37</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:colorBackground">#1A2340</item>
+        <item name="android:textColorPrimary">#F2EBDD</item>
+        <item name="android:textColorSecondary">#8E93A8</item>
+    </style>
 </resources>

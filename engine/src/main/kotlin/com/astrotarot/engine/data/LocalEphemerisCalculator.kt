@@ -1,6 +1,7 @@
 package com.astrotarot.engine.data
 
 import com.astrotarot.engine.domain.model.AstroTransitResponse
+import com.astrotarot.engine.domain.model.CelestialBody
 import com.astrotarot.engine.domain.model.PlanetPosition
 import com.astrotarot.engine.domain.model.ZodiacSign
 import java.time.Instant
@@ -52,30 +53,28 @@ object LocalEphemerisCalculator {
 
         val positions = mutableListOf<PlanetPosition>()
 
-        fun add(name: String, longitude: Double, retrograde: Boolean = false) {
+        fun add(body: CelestialBody, longitude: Double, retrograde: Boolean = false) {
             val sign  = signOf(longitude)
             val house = wholeSignHouse(longitude, ascendant)
-            positions.add(PlanetPosition(name, sign.name, longitude, house, retrograde))
+            positions.add(PlanetPosition(body, sign.name, longitude, house, retrograde))
         }
 
-        add("SUN",  sunLon)
-        add("MOON", moonLongitude(D, T))
-
-        data class Planet(val name: String, val el: OrbitalElements)
+        add(CelestialBody.SUN,  sunLon)
+        add(CelestialBody.MOON, moonLongitude(D, T))
 
         listOf(
-            Planet("MERCURY", MERCURY),
-            Planet("VENUS",   VENUS),
-            Planet("MARS",    MARS),
-            Planet("JUPITER", JUPITER),
-            Planet("SATURN",  SATURN),
-            Planet("URANUS",  URANUS),
-            Planet("NEPTUNE", NEPTUNE),
-            Planet("PLUTO",   PLUTO)
-        ).forEach { (name, el) ->
+            CelestialBody.MERCURY to MERCURY,
+            CelestialBody.VENUS   to VENUS,
+            CelestialBody.MARS    to MARS,
+            CelestialBody.JUPITER to JUPITER,
+            CelestialBody.SATURN  to SATURN,
+            CelestialBody.URANUS  to URANUS,
+            CelestialBody.NEPTUNE to NEPTUNE,
+            CelestialBody.PLUTO   to PLUTO
+        ).forEach { (body, el) ->
             val geoLon   = geocentricLongitude(T, el, earthXY)
             val retrograde = isRetrograde(T, el)
-            add(name, geoLon, retrograde)
+            add(body, geoLon, retrograde)
         }
 
         return AstroTransitResponse(

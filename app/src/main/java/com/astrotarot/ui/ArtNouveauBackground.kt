@@ -11,13 +11,10 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.unit.dp
 import com.astrotarot.ui.theme.Gold
-import kotlin.math.PI
-import kotlin.math.cos
-import kotlin.math.sin
 
 /**
  * Draws a subtle Art Nouveau ornamental pattern behind the composable.
- * Corner botanical sprays, mid-edge diamonds, and a faint central medallion —
+ * Corner botanical sprays and mid-edge diamonds —
  * all at low opacity so underlying content stays readable.
  */
 fun Modifier.artNouveauBackground(): Modifier = this.drawBehind {
@@ -30,16 +27,6 @@ private fun DrawScope.drawScreenPattern(g: Color) {
     val cx   = w / 2f
     val cy   = h / 2f
     val hair = 0.6.dp.toPx()
-    val fine = 1.0.dp.toPx()
-
-    // ── Micro crosshatch — just barely visible ──────────────────────────
-    val gridStep = 24.dp.toPx()
-    var pos = -h
-    while (pos < w + h) {
-        drawLine(g.copy(alpha = 0.030f), Offset(pos, 0f), Offset(pos + h, h), hair)
-        drawLine(g.copy(alpha = 0.030f), Offset(pos, 0f), Offset(pos - h, h), hair)
-        pos += gridStep
-    }
 
     // ── Border rule — thin line inset from every edge ───────────────────
     val borderInset = 16.dp.toPx()
@@ -50,7 +37,7 @@ private fun DrawScope.drawScreenPattern(g: Color) {
         lineTo(borderInset, h - borderInset)
         close()
     }
-    drawPath(bPath, g.copy(alpha = 0.12f), style = Stroke(hair * 0.6f))
+    drawPath(bPath, g.copy(alpha = 0.20f), style = Stroke(hair * 0.6f))
 
     // ── Corner botanical sprays ─────────────────────────────────────────
     val spray = minOf(w, h) * 0.24f   // spray reach from corner
@@ -73,50 +60,6 @@ private fun DrawScope.drawScreenPattern(g: Color) {
     ).forEach { pt ->
         drawMidEdgeOrnament(pt, g, hair)
     }
-
-    // ── Central faint medallion ─────────────────────────────────────────
-    val R  = minOf(w, h) * 0.32f
-    val r1 = R * 0.60f
-    val r2 = R * 0.32f
-    val r3 = R * 0.14f
-
-    drawCircle(g.copy(alpha = 0.06f), R,  Offset(cx, cy), style = Stroke(hair))
-    drawCircle(g.copy(alpha = 0.08f), r1, Offset(cx, cy), style = Stroke(hair * 0.7f))
-
-    // 12 petal ovals on the mid-ring
-    val petalRingR = (R + r1) / 2f
-    val petalH     = (R - r1) * 0.82f
-    val petalW     = petalH * 0.36f
-    for (i in 0..11) {
-        val angle = (2.0 * PI * i / 12).toFloat()
-        val px    = cx + petalRingR * cos(angle)
-        val py    = cy + petalRingR * sin(angle)
-        withTransform({
-            rotate(degrees = angle * (180f / PI.toFloat()) + 90f, pivot = Offset(px, py))
-        }) {
-            drawOval(
-                g.copy(alpha = 0.07f),
-                topLeft = Offset(px - petalW / 2f, py - petalH / 2f),
-                size    = Size(petalW, petalH),
-                style   = Stroke(hair * 0.6f),
-            )
-        }
-    }
-
-    // 12 dots between petals on inner ring
-    for (i in 0..11) {
-        val angle = (2.0 * PI * (i + 0.5) / 12).toFloat()
-        drawCircle(
-            g.copy(alpha = 0.10f),
-            radius = 1.4.dp.toPx(),
-            center = Offset(cx + r1 * cos(angle), cy + r1 * sin(angle)),
-        )
-    }
-
-    drawCircle(g.copy(alpha = 0.10f), r2, Offset(cx, cy), style = Stroke(hair * 0.8f))
-    drawLine(g.copy(alpha = 0.08f), Offset(cx, cy - r2), Offset(cx, cy + r2), hair * 0.6f)
-    drawLine(g.copy(alpha = 0.08f), Offset(cx - r2, cy), Offset(cx + r2, cy), hair * 0.6f)
-    drawCircle(g.copy(alpha = 0.12f), r3, Offset(cx, cy), style = Stroke(fine * 0.7f))
 }
 
 // ── Corner botanical spray ────────────────────────────────────────────────────
@@ -134,7 +77,7 @@ private fun DrawScope.drawCornerSpray(
             c.x,                       c.y + dy * reach * 0.55f,
             c.x,                       c.y + dy * reach,
         )
-    }, g.copy(alpha = 0.18f), style = Stroke(hair))
+    }, g.copy(alpha = 0.28f), style = Stroke(hair))
 
     // Secondary arc — inner echo, slightly smaller
     val gap = 8.dp.toPx()
@@ -145,7 +88,7 @@ private fun DrawScope.drawCornerSpray(
             c.x + dx * gap,                    c.y + dy * (reach - gap) * 0.55f,
             c.x + dx * gap,                    c.y + dy * (reach - gap),
         )
-    }, g.copy(alpha = 0.10f), style = Stroke(hair * 0.6f))
+    }, g.copy(alpha = 0.16f), style = Stroke(hair * 0.6f))
 
     // Diagonal cross-stem from corner toward centre
     val diag = reach * 0.62f
@@ -156,7 +99,7 @@ private fun DrawScope.drawCornerSpray(
             c.x + dx * diag * 0.6f, c.y + dy * diag * 0.7f,
             c.x + dx * diag,        c.y + dy * diag,
         )
-    }, g.copy(alpha = 0.14f), style = Stroke(hair * 0.8f))
+    }, g.copy(alpha = 0.22f), style = Stroke(hair * 0.8f))
 
     // Three leaf buds at 25%, 50%, 75% along the primary arc
     listOf(0.25f, 0.50f, 0.75f).forEachIndexed { idx, t ->
@@ -170,7 +113,7 @@ private fun DrawScope.drawCornerSpray(
             rotate(rotDeg, pivot = Offset(lx, ly))
         }) {
             drawOval(
-                g.copy(alpha = 0.16f),
+                g.copy(alpha = 0.25f),
                 topLeft = Offset(lx - lr * 0.50f, ly - lr * 1.05f),
                 size    = Size(lr, lr * 2.1f),
                 style   = Stroke(hair * 0.7f),
@@ -188,7 +131,7 @@ private fun DrawScope.drawCornerSpray(
             tx + dx * diag * 0.22f, ty + dy * diag * 0.18f,
             tx + dx * diag * 0.10f, ty + dy * diag * 0.22f,
         )
-    }, g.copy(alpha = 0.12f), style = Stroke(hair * 0.6f))
+    }, g.copy(alpha = 0.18f), style = Stroke(hair * 0.6f))
 }
 
 // ── Mid-edge ornament ─────────────────────────────────────────────────────────
@@ -203,10 +146,10 @@ private fun DrawScope.drawMidEdgeOrnament(pt: Offset, g: Color, hair: Float) {
         lineTo(pt.x,        pt.y + ds)
         lineTo(pt.x - ds * 0.55f, pt.y)
         close()
-    }, g.copy(alpha = 0.22f))
+    }, g.copy(alpha = 0.32f))
     // Side dots
-    drawCircle(g.copy(alpha = 0.16f), ds * 0.28f,
+    drawCircle(g.copy(alpha = 0.24f), ds * 0.28f,
         center = Offset(pt.x - ds * 0.85f, pt.y))
-    drawCircle(g.copy(alpha = 0.16f), ds * 0.28f,
+    drawCircle(g.copy(alpha = 0.24f), ds * 0.28f,
         center = Offset(pt.x + ds * 0.85f, pt.y))
 }

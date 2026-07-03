@@ -6,21 +6,21 @@ import androidx.compose.runtime.Composable
 
 private val AstroColorScheme = darkColorScheme(
     primary             = Gold,
-    onPrimary           = DeepNavy,
-    primaryContainer    = DimGold,
-    onPrimaryContainer  = StarWhite,
-    secondary           = MysticPurple,       // forest green
-    onSecondary         = StarWhite,
-    secondaryContainer  = CardSurface,
-    onSecondaryContainer = LightPurple,       // sage green
-    background          = DeepNavy,           // deep warm brown
-    onBackground        = StarWhite,          // warm ivory
-    surface             = MidnightBlue,       // mahogany
-    onSurface           = StarWhite,
-    surfaceVariant      = CardSurface,
-    onSurfaceVariant    = DimWhite,           // muted warm ivory
-    error               = ReversedRed,        // deep burgundy
-    onError             = StarWhite,
+    onPrimary           = MidnightVelvet,
+    primaryContainer    = DeepGold,
+    onPrimaryContainer  = Ivory,
+    secondary           = Oxblood,            // deep oxblood
+    onSecondary         = Ivory,
+    secondaryContainer  = IndigoCard,
+    onSecondaryContainer = RoseGold,          // soft rose metallic
+    background          = MidnightVelvet,     // deep midnight blue
+    onBackground        = Ivory,              // warm ivory
+    surface             = IndigoSurface,      // indigo panel
+    onSurface           = Ivory,
+    surfaceVariant      = IndigoCard,
+    onSurfaceVariant    = DimIvory,           // cool muted ivory-blue
+    error               = ReversedRed,        // rich crimson-oxblood
+    onError             = Ivory,
 )
 
 @Composable

@@ -58,20 +58,27 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.foundation.Image
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.material3.AlertDialog
 import com.astrotarot.ui.artNouveauBackground
 import com.astrotarot.ui.LocalSoundManager
+import com.astrotarot.ui.Lore
+import com.astrotarot.ui.ASPECT_LORE
+import com.astrotarot.ui.PLANET_LORE
+import com.astrotarot.ui.markerLore
 import com.astrotarot.engine.domain.model.Aspect
 import com.astrotarot.engine.domain.model.PlanetPosition
 import com.astrotarot.engine.domain.model.WeightedCard
 import com.astrotarot.ui.ReadingUiState
 import com.astrotarot.ui.theme.CardBack
-import com.astrotarot.ui.theme.CardSurface
-import com.astrotarot.ui.theme.DimWhite
+import com.astrotarot.ui.theme.IndigoCard
+import com.astrotarot.ui.theme.DimIvory
 import com.astrotarot.ui.theme.Gold
+import com.astrotarot.ui.theme.GoldFrameBrush
+import com.astrotarot.ui.theme.GoldTextBrush
 import com.astrotarot.ui.theme.HarmonyTeal
-import com.astrotarot.ui.theme.MidnightBlue
+import com.astrotarot.ui.theme.IndigoSurface
 import com.astrotarot.ui.theme.ReversedRed
-import com.astrotarot.ui.theme.StarWhite
+import com.astrotarot.ui.theme.Ivory
 import com.astrotarot.ui.theme.TensionRose
 import kotlinx.coroutines.delay
 import java.time.Instant
@@ -135,9 +142,8 @@ fun ReadingScreen(
             ) {
                 Text(
                     text = "YOUR READING",
-                    style = MaterialTheme.typography.titleLarge,
+                    style = MaterialTheme.typography.titleLarge.copy(brush = GoldTextBrush),
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary,
                     letterSpacing = 4.sp,
                 )
                 TextButton(
@@ -148,8 +154,8 @@ fun ReadingScreen(
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(4.dp),
                 ) {
                     Text(
-                        text = if (soundOn) "♪" else "♪̶",
-                        color = if (soundOn) Gold.copy(alpha = 0.7f) else DimWhite.copy(alpha = 0.4f),
+                        text = "♪",
+                        color = if (soundOn) Gold.copy(alpha = 0.7f) else DimIvory.copy(alpha = 0.3f),
                         fontSize = 16.sp,
                     )
                 }
@@ -157,7 +163,7 @@ fun ReadingScreen(
             Text(
                 text = "${"%.3f".format(state.lat)}°, ${"%.3f".format(state.lon)}°  ·  $utcTime",
                 style = MaterialTheme.typography.bodySmall,
-                color = DimWhite,
+                color = DimIvory,
                 modifier = Modifier.padding(top = 2.dp),
             )
             Spacer(Modifier.height(24.dp))
@@ -197,7 +203,7 @@ fun ReadingScreen(
                     text = "Ascendant ${"%.1f".format(state.ascendantDegree)}°" +
                             "  ·  MC ${"%.1f".format(state.midheavenDegree)}°",
                     style = MaterialTheme.typography.bodySmall,
-                    color = DimWhite,
+                    color = DimIvory,
                     modifier = Modifier.padding(top = 6.dp),
                 )
             }
@@ -206,15 +212,17 @@ fun ReadingScreen(
 
         // ── New Reading ────────────────────────────────────────
         item {
-            Button(
+            androidx.compose.material3.OutlinedButton(
                 onClick = onNewReading,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    contentColor   = MaterialTheme.colorScheme.onPrimary,
+                shape  = RoundedCornerShape(4.dp),
+                border = androidx.compose.foundation.BorderStroke(1.5.dp, GoldFrameBrush),
+                colors = ButtonDefaults.outlinedButtonColors(
+                    containerColor = IndigoSurface.copy(alpha = 0.4f),
+                    contentColor   = Gold,
                 ),
                 modifier = Modifier.fillMaxWidth().height(52.dp),
             ) {
-                Text("NEW READING", fontWeight = FontWeight.Bold, letterSpacing = 2.sp)
+                Text("✦  NEW READING  ✦", fontWeight = FontWeight.Bold, letterSpacing = 2.sp)
             }
             Spacer(Modifier.height(32.dp))
         }
@@ -309,8 +317,8 @@ fun FlippingTarotCard(
                 )
             }
             weightedCard.primaryInfluence?.let { planet ->
-                val glyph  = PLANET_GLYPHS[planet.uppercase()] ?: ""
-                val label  = planet.lowercase().replaceFirstChar { it.uppercase() }
+                val glyph  = PLANET_GLYPHS[planet.name] ?: ""
+                val label  = planet.name.lowercase().replaceFirstChar { it.uppercase() }
                 val marker = weightedCard.reversalMarker ?: ""
                 Text(
                     text      = "$glyph $label $marker".trim(),
@@ -327,7 +335,7 @@ fun FlippingTarotCard(
         Text(
             text      = positionLabel,
             style     = MaterialTheme.typography.labelSmall,
-            color     = DimWhite,
+            color     = DimIvory,
             textAlign = TextAlign.Center,
             fontSize  = 9.sp,
         )
@@ -396,7 +404,7 @@ private fun CardTextFace(wc: WeightedCard) {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(CardSurface)
+            .background(IndigoCard)
             .ornateFrame(if (wc.reversed) ReversedRed else Gold)
             .padding(8.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -421,7 +429,7 @@ private fun CardTextFace(wc: WeightedCard) {
         Text(
             text      = if (wc.reversed) wc.card.reversedDescription else wc.card.baseDescription,
             style     = MaterialTheme.typography.bodySmall,
-            color     = StarWhite,
+            color     = Ivory,
             textAlign = TextAlign.Center,
             fontSize  = 10.sp,
             lineHeight = 13.sp,
@@ -604,7 +612,7 @@ private fun CardDetailDialog(
     Dialog(onDismissRequest = onDismiss) {
         Card(
             shape  = RoundedCornerShape(12.dp),
-            colors = CardDefaults.cardColors(containerColor = MidnightBlue),
+            colors = CardDefaults.cardColors(containerColor = IndigoSurface),
             modifier = Modifier.fillMaxWidth(),
         ) {
             Column(
@@ -646,7 +654,7 @@ private fun CardDetailDialog(
                 Text(
                     text      = description,
                     style     = MaterialTheme.typography.bodyMedium,
-                    color     = StarWhite,
+                    color     = Ivory,
                     textAlign = TextAlign.Center,
                     lineHeight = 22.sp,
                 )
@@ -663,7 +671,7 @@ private fun CardDetailDialog(
                 Spacer(Modifier.height(16.dp))
 
                 TextButton(onClick = onDismiss) {
-                    Text("CLOSE", color = DimWhite, letterSpacing = 2.sp)
+                    Text("CLOSE", color = DimIvory, letterSpacing = 2.sp)
                 }
             }
         }
@@ -675,8 +683,14 @@ private fun CardDetailDialog(
 @Composable
 private fun PlanetInfluenceLabel(wc: WeightedCard) {
     val planet = wc.primaryInfluence ?: return
-    val glyph  = PLANET_GLYPHS[planet.uppercase()] ?: ""
-    val name   = planet.lowercase().replaceFirstChar { it.uppercase() }
+    val glyph  = PLANET_GLYPHS[planet.name] ?: ""
+    val name   = planet.name.lowercase().replaceFirstChar { it.uppercase() }
+
+    var showLore by remember { mutableStateOf(false) }
+    if (showLore) {
+        val lores = listOfNotNull(PLANET_LORE[planet], if (wc.reversed) markerLore(wc.reversalMarker) else null)
+        LoreDialog(lores = lores, onDismiss = { showLore = false })
+    }
 
     if (wc.reversed) {
         val marker     = wc.reversalMarker ?: ""
@@ -686,7 +700,10 @@ private fun PlanetInfluenceLabel(wc: WeightedCard) {
             "☍"  -> "in opposition — this card appears under resistance"
             else -> "in tension — this card appears against the current sky"
         }
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.clickable { showLore = true },
+        ) {
             Text(
                 text  = "$glyph  $name  $marker".trim(),
                 color = TensionRose.copy(alpha = 0.85f),
@@ -695,14 +712,17 @@ private fun PlanetInfluenceLabel(wc: WeightedCard) {
             )
             Text(
                 text      = flavorText,
-                color     = DimWhite,
+                color     = DimIvory,
                 style     = MaterialTheme.typography.labelSmall,
                 fontStyle = FontStyle.Italic,
                 textAlign = TextAlign.Center,
             )
         }
     } else {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.clickable { showLore = true },
+        ) {
             Text(
                 text  = "$glyph  $name",
                 color = Gold.copy(alpha = 0.85f),
@@ -711,7 +731,7 @@ private fun PlanetInfluenceLabel(wc: WeightedCard) {
             )
             Text(
                 text      = "strongest planetary influence in this reading",
-                color     = DimWhite,
+                color     = DimIvory,
                 style     = MaterialTheme.typography.labelSmall,
                 fontStyle = FontStyle.Italic,
                 textAlign = TextAlign.Center,
@@ -762,7 +782,7 @@ private fun ExpandableSection(title: String, content: @Composable () -> Unit) {
                     letterSpacing = 1.sp,
                 )
             }
-            Text(if (expanded) "▲" else "▼", color = DimWhite, fontSize = 9.sp)
+            Text(if (expanded) "▲" else "▼", color = DimIvory, fontSize = 9.sp)
         }
         AnimatedVisibility(visible = expanded, enter = expandVertically(), exit = shrinkVertically()) {
             Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)) {
@@ -779,19 +799,69 @@ private fun ExpandableSection(title: String, content: @Composable () -> Unit) {
 @Composable
 private fun AspectRow(aspect: Aspect) {
     val color = if (aspect.type.isHarmonious) HarmonyTeal else TensionRose
+    var showLore by remember { mutableStateOf(false) }
+    if (showLore) {
+        ASPECT_LORE[aspect.type]?.let { lore ->
+            LoreDialog(lores = listOf(lore), onDismiss = { showLore = false })
+        }
+    }
     Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { showLore = true }
+            .padding(vertical = 3.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment     = Alignment.CenterVertically,
     ) {
-        Text("${aspect.planet1.take(4)} ${aspect.type.symbol} ${aspect.planet2.take(4)}",
-            style = MaterialTheme.typography.bodySmall, color = StarWhite,
+        Text("${aspect.planet1.name.take(4)} ${aspect.type.symbol} ${aspect.planet2.name.take(4)}",
+            style = MaterialTheme.typography.bodySmall, color = Ivory,
             modifier = Modifier.width(130.dp))
         Text(aspect.type.label, style = MaterialTheme.typography.bodySmall,
             color = color, modifier = Modifier.width(80.dp))
         Text("${"%.1f".format(aspect.orb)}° orb",
-            style = MaterialTheme.typography.bodySmall, color = DimWhite)
+            style = MaterialTheme.typography.bodySmall, color = DimIvory)
     }
+}
+
+// ── Lore dialog ───────────────────────────────────────────────────────────────
+// Tap-to-reveal plain-language explanation of a planet or aspect influence.
+
+@Composable
+private fun LoreDialog(lores: List<Lore>, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor   = IndigoSurface,
+        shape            = RoundedCornerShape(8.dp),
+        modifier         = Modifier.border(1.dp, Gold.copy(alpha = 0.4f), RoundedCornerShape(8.dp)),
+        text = {
+            Column {
+                lores.forEachIndexed { i, lore ->
+                    if (i > 0) {
+                        Spacer(Modifier.height(14.dp))
+                        HorizontalDivider(color = Gold.copy(alpha = 0.2f), thickness = 0.5.dp)
+                        Spacer(Modifier.height(14.dp))
+                    }
+                    Text(
+                        text  = "${lore.glyph}  ${lore.title}",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = Gold,
+                        letterSpacing = 1.sp,
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        text  = lore.text,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Ivory,
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Close", color = DimIvory, style = MaterialTheme.typography.bodySmall)
+            }
+        },
+    )
 }
 
 // ── Planet row ────────────────────────────────────────────────────────────────
@@ -803,14 +873,14 @@ private fun PlanetRow(pos: PlanetPosition) {
         modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
-        Text(pos.planet.take(7) + retro, style = MaterialTheme.typography.bodySmall,
-            color = if (pos.isRetrograde) TensionRose else StarWhite,
+        Text(pos.planet.name.take(7) + retro, style = MaterialTheme.typography.bodySmall,
+            color = if (pos.isRetrograde) TensionRose else Ivory,
             modifier = Modifier.width(90.dp))
         Text(pos.sign.lowercase().replaceFirstChar { it.uppercase() },
-            style = MaterialTheme.typography.bodySmall, color = DimWhite,
+            style = MaterialTheme.typography.bodySmall, color = DimIvory,
             modifier = Modifier.width(90.dp))
         Text("${"%.1f".format(pos.longitude)}°", style = MaterialTheme.typography.bodySmall,
-            color = DimWhite, modifier = Modifier.width(52.dp), textAlign = TextAlign.End)
+            color = DimIvory, modifier = Modifier.width(52.dp), textAlign = TextAlign.End)
         Text("H${pos.house}", style = MaterialTheme.typography.bodySmall,
             color = Gold.copy(alpha = 0.7f), modifier = Modifier.width(32.dp),
             textAlign = TextAlign.End)
