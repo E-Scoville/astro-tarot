@@ -4,14 +4,19 @@ import com.astrotarot.engine.data.FULL_DECK
 import com.astrotarot.engine.data.LocalEphemerisCalculator
 import com.astrotarot.engine.domain.TarotAstrologyEngine
 import java.time.Instant
+import java.time.LocalDateTime
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
+import java.time.format.DateTimeParseException
+
+private val INPUT_FORMAT  = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
+private val DISPLAY_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm 'UTC'")
 
 fun main() {
     val engine = TarotAstrologyEngine(FULL_DECK)
 
     println("=====================================================")
-    println("  REAL-TIME ASTRO-TAROT ENGINE v0.2 (Live Ephemeris)")
+    println("  ASTRO-TAROT ENGINE v0.3")
     println("=====================================================")
     println()
 
@@ -21,17 +26,37 @@ fun main() {
     print("Enter Local Longitude (e.g., -111.73): ")
     val lon = readLine()?.toDoubleOrNull() ?: 0.0
 
-    val now = System.currentTimeMillis()
-    val utcTime = Instant.ofEpochMilli(now)
-        .atOffset(ZoneOffset.UTC)
-        .format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm 'UTC'"))
+    println()
+    print("Use current time? (Y/n): ")
+    val useNow = readLine()?.trim()?.lowercase()?.let { it == "" || it == "y" } ?: true
+
+    val timestamp: Long
+    val utcLabel: String
+
+    if (useNow) {
+        timestamp = System.currentTimeMillis()
+        utcLabel  = Instant.ofEpochMilli(timestamp).atOffset(ZoneOffset.UTC).format(DISPLAY_FORMAT)
+    } else {
+        println("Enter date and time in UTC (format: yyyy-MM-dd HH:mm)")
+        println("  Historical example: 1969-07-20 20:17")
+        println("  Future example:     2033-01-01 00:00")
+        print("Date/time: ")
+        val input = readLine()?.trim() ?: ""
+        timestamp = try {
+            LocalDateTime.parse(input, INPUT_FORMAT).toInstant(ZoneOffset.UTC).toEpochMilli()
+        } catch (e: DateTimeParseException) {
+            println("Could not parse \"$input\" — falling back to current time.")
+            System.currentTimeMillis()
+        }
+        utcLabel = Instant.ofEpochMilli(timestamp).atOffset(ZoneOffset.UTC).format(DISPLAY_FORMAT)
+    }
 
     println()
-    println("Coordinates: $lat°, $lon°   |   $utcTime")
-    println("Computing live ephemeris (Meeus algorithms, J2000.0 elements)...")
+    println("Coordinates: $lat°, $lon°   |   $utcLabel")
+    println("Computing ephemeris (Meeus algorithms, J2000.0 elements)...")
     println()
 
-    val astroData = LocalEphemerisCalculator.calculate(lat, lon, now)
+    val astroData = LocalEphemerisCalculator.calculate(lat, lon, timestamp)
 
     println("── Planetary Positions ──────────────────────────────")
     astroData.positions.forEach { pos ->
