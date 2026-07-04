@@ -34,9 +34,10 @@ class TarotAstrologyEngine(private val deck: List<TarotCard>) {
 
     /**
      * Draws one weighted card per spread position, without replacement across the
-     * whole spread. Positions bound to a house with at least one occupying transit
-     * are weighted using ONLY that house's transits (and aspects touching it); all
-     * other positions (unbound, or a house with no transits) use the full sky.
+     * whole spread. Positions bound to a planet are weighted using ONLY that
+     * planet's transit (and aspects touching it); positions bound to a house with
+     * at least one occupying transit are weighted using ONLY that house's transits;
+     * all other positions (unbound, or a house with no transits) use the full sky.
      */
     fun generateSpreadReading(
         transits: List<PlanetPosition>,
@@ -52,14 +53,18 @@ class TarotAstrologyEngine(private val deck: List<TarotCard>) {
         val result = mutableListOf<WeightedCard>()
 
         for (position in spread.positions) {
-            val houseTransits = position.house?.let { house -> transits.filter { it.house == house } }
-            val useHouseScope = !houseTransits.isNullOrEmpty()
+            // Planet binding takes precedence over house binding.
+            val scopedTransits = when {
+                position.planet != null -> transits.filter { it.planet == position.planet }
+                position.house  != null -> transits.filter { it.house == position.house }
+                else                    -> emptyList()
+            }
 
-            val (weights, avgWeight, influenceMap) = if (useHouseScope) {
-                val houseAspects = aspects.filter { aspect ->
-                    houseTransits!!.any { it.planet == aspect.planet1 || it.planet == aspect.planet2 }
+            val (weights, avgWeight, influenceMap) = if (scopedTransits.isNotEmpty()) {
+                val scopedAspects = aspects.filter { aspect ->
+                    scopedTransits.any { it.planet == aspect.planet1 || it.planet == aspect.planet2 }
                 }
-                val table = buildWeightTable(houseTransits!!, houseAspects)
+                val table = buildWeightTable(scopedTransits, scopedAspects)
                 Triple(table, table.map { it.second }.average(),
                     table.associate { (card, _, planet) -> card to planet })
             } else {

@@ -1,8 +1,9 @@
 package com.astrotarot.engine.domain.model
 
 data class SpreadPosition(
-    val label: String,          // e.g. "I — The Ascendant · Self & Present"
-    val house: Int? = null,     // optional Whole Sign house binding (1..12)
+    val label: String,               // e.g. "I — The Ascendant · Self & Present"
+    val house: Int? = null,          // optional Whole Sign house binding (1..12)
+    val planet: CelestialBody? = null, // optional planet binding — drawn by that planet's transit alone
 )
 
 data class Spread(
@@ -42,6 +43,18 @@ object Spreads {
             SpreadPosition("XII — The House of the Hidden", house = 12),
         ))
 
-    val ALL = listOf(SINGLE, ANGLES, HOUSES)
+    val SEVEN_PLANETS = Spread("planets", "The Seven Planets",
+        "One card for each wanderer of the old sky, drawn by that planet alone.",
+        listOf(
+            SpreadPosition("☉ The Sun · Vitality & Will",        planet = CelestialBody.SUN),
+            SpreadPosition("☽ The Moon · Instinct & Tides",      planet = CelestialBody.MOON),
+            SpreadPosition("☿ Mercury · Words & Crossings",      planet = CelestialBody.MERCURY),
+            SpreadPosition("♀ Venus · Love & Attraction",        planet = CelestialBody.VENUS),
+            SpreadPosition("♂ Mars · Force & Courage",           planet = CelestialBody.MARS),
+            SpreadPosition("♃ Jupiter · Fortune & Expansion",    planet = CelestialBody.JUPITER),
+            SpreadPosition("♄ Saturn · Limits & Time",           planet = CelestialBody.SATURN),
+        ))
+
+    val ALL = listOf(SINGLE, ANGLES, SEVEN_PLANETS, HOUSES)
     fun byId(id: String): Spread = ALL.find { it.id == id } ?: ANGLES
 }

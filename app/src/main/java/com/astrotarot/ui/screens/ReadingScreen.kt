@@ -183,7 +183,7 @@ fun ReadingScreen(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    val sidePad = if (cardCount == 1) 0.5f else (3 - rowCards.size) / 2f
+                    val sidePad = if (cardCount == 1) 0.2f else (3 - rowCards.size) / 2f
                     if (sidePad > 0f) Spacer(Modifier.weight(sidePad))
                     rowCards.forEachIndexed { j, wc ->
                         val i = rowIdx * 3 + j

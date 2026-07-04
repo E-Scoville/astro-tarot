@@ -86,6 +86,44 @@ class SpreadTest {
     }
 
     @Test
+    fun `planet-bound position draws by that planet's transit alone`() {
+        // "Two of Wands": MARS, ARIES, longitude range [0, 10).
+        // Mars sits in that decan; the Sun sits elsewhere (Libra). A MARS-bound
+        // position should favor Two of Wands even though other planets are present.
+        val spread = Spread(
+            id = "test-mars",
+            name = "Test",
+            tagline = "",
+            positions = listOf(SpreadPosition("Mars", planet = CelestialBody.MARS)),
+        )
+        val transits = listOf(
+            PlanetPosition(CelestialBody.MARS, "ARIES", 5.0, 5, false),
+            PlanetPosition(CelestialBody.SUN,  "LIBRA", 185.0, 11, false),
+        )
+
+        val trials = 400
+        var hits = 0
+        for (seed in 0 until trials) {
+            val reading = engine.generateSpreadReading(transits, spread, aspects = emptyList(), random = Random(seed))
+            if (reading.first().card.name == "Two of Wands") hits++
+        }
+
+        val baseline = 1.0 / FULL_DECK.size
+        val observedRate = hits.toDouble() / trials
+        assertTrue(
+            "expected Two of Wands above baseline ($baseline) in MARS-bound position, got rate $observedRate ($hits/$trials)",
+            observedRate > baseline * 2.0
+        )
+    }
+
+    @Test
+    fun `seven planets spread returns seven distinct cards with planet-bound positions`() {
+        val reading = engine.generateSpreadReading(baselineTransits(), Spreads.SEVEN_PLANETS, random = Random(7))
+        assertEquals(7, reading.size)
+        assertEquals(7, reading.map { it.card.name }.distinct().size)
+    }
+
+    @Test
     fun `empty-house position falls back to full-sky weights without crashing`() {
         // Position bound to house 5, but no transits occupy house 5.
         val spread = Spread(
