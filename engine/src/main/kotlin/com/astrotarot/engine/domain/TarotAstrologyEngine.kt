@@ -45,8 +45,13 @@ class TarotAstrologyEngine(private val deck: List<TarotCard>) {
         aspects: List<Aspect> = AspectCalculator.calculate(transits),
         random: Random = Random.Default,
     ): List<WeightedCard> {
+        require(spread.positions.size <= deck.size) {
+            "Spread has ${spread.positions.size} positions but the deck only has ${deck.size} cards"
+        }
+
         val fullWeights = buildWeightTable(transits, aspects)
         val fullAvg = fullWeights.map { it.second }.average()
+        val fullWeightMap = fullWeights.associate { (card, w, _) -> card to w }
         val fullInfluence = fullWeights.associate { (card, _, planet) -> card to planet }
 
         val usedCards = mutableSetOf<TarotCard>()
@@ -60,26 +65,28 @@ class TarotAstrologyEngine(private val deck: List<TarotCard>) {
                 else                    -> emptyList()
             }
 
-            val (weights, avgWeight, influenceMap) = if (scopedTransits.isNotEmpty()) {
+            val (weights, influenceMap) = if (scopedTransits.isNotEmpty()) {
                 val scopedAspects = aspects.filter { aspect ->
                     scopedTransits.any { it.planet == aspect.planet1 || it.planet == aspect.planet2 }
                 }
                 val table = buildWeightTable(scopedTransits, scopedAspects)
-                Triple(table, table.map { it.second }.average(),
-                    table.associate { (card, _, planet) -> card to planet })
+                Pair(table, table.associate { (card, _, planet) -> card to planet })
             } else {
-                Triple(fullWeights, fullAvg, fullInfluence)
+                Pair(fullWeights, fullInfluence)
             }
 
+            // Every weight table spans the full deck, so with positions <= deck
+            // size (checked above) there is always at least one card available.
             val available = weights.filter { it.first !in usedCards }
-            if (available.isEmpty()) continue
 
             val (card, weight) = weightedRandomSample(
                 available.map { (c, w, _) -> c to w }, 1, random,
             ).first()
             usedCards += card
 
-            val reversed = weight < avgWeight
+            // Reversal is judged against the full sky, not the scoped table, so
+            // the threshold is uniform across positions regardless of binding.
+            val reversed = (fullWeightMap[card] ?: weight) < fullAvg
             val weightedCard = if (reversed) {
                 val (rPlanet, rMarker) = findReversalInfluence(card, transits, aspects)
                 WeightedCard(card, weight, reversed = true,

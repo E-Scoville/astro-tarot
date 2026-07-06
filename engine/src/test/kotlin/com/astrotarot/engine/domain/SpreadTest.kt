@@ -140,6 +140,58 @@ class SpreadTest {
     }
 
     @Test
+    fun `reversal is judged against the full sky regardless of position binding`() {
+        // The same card must get the same reversed flag whether it lands in a
+        // planet-bound, house-bound, or unbound position under the same sky.
+        val transits = baselineTransits()
+        val spreads = listOf(
+            Spread("t1", "T", "", listOf(SpreadPosition("Unbound"))),
+            Spread("t2", "T", "", listOf(SpreadPosition("Mars", planet = CelestialBody.MARS))),
+            Spread("t3", "T", "", listOf(SpreadPosition("House 5", house = 5))),
+        )
+
+        val reversalByCard = mutableMapOf<String, Boolean>()
+        for (spread in spreads) {
+            for (seed in 0 until 200) {
+                val card = engine.generateSpreadReading(transits, spread, random = Random(seed)).first()
+                reversalByCard[card.card.name]?.let { seen ->
+                    assertEquals(
+                        "card ${card.card.name} got inconsistent reversal across positions",
+                        seen, card.reversed,
+                    )
+                }
+                reversalByCard[card.card.name] = card.reversed
+            }
+        }
+    }
+
+    @Test
+    fun `spread with more positions than deck cards is rejected`() {
+        val oversized = Spread(
+            id = "test-oversized", name = "Test", tagline = "",
+            positions = (1..FULL_DECK.size + 1).map { SpreadPosition("P$it") },
+        )
+        try {
+            engine.generateSpreadReading(baselineTransits(), oversized, random = Random(1))
+            org.junit.Assert.fail("expected IllegalArgumentException for oversized spread")
+        } catch (expected: IllegalArgumentException) {
+            // ok
+        }
+    }
+
+    @Test
+    fun `every position yields exactly one card in order`() {
+        // Even a deck-sized spread must return one card per position.
+        val maxSpread = Spread(
+            id = "test-max", name = "Test", tagline = "",
+            positions = (1..FULL_DECK.size).map { SpreadPosition("P$it") },
+        )
+        val reading = engine.generateSpreadReading(baselineTransits(), maxSpread, random = Random(5))
+        assertEquals(FULL_DECK.size, reading.size)
+        assertEquals(FULL_DECK.size, reading.map { it.card.name }.distinct().size)
+    }
+
+    @Test
     fun `generateWeightedReading behavior is unchanged`() {
         // Re-verify the exact seeded output the original engine test relies on,
         // confirming the refactor into buildWeightTable didn't alter behavior.
