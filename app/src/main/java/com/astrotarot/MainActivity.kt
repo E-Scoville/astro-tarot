@@ -34,8 +34,9 @@ class MainActivity : ComponentActivity() {
         setContent {
             AstroTarotTheme {
                 CompositionLocalProvider(LocalSoundManager provides soundManager) {
-                val vm: ReadingViewModel = viewModel()
+                val vm: ReadingViewModel = viewModel(factory = ReadingViewModel.factory(applicationContext))
                 val state by vm.state.collectAsState()
+                val history by vm.history.collectAsState()
                 var showInfo by remember { mutableStateOf(false) }
 
                 if (showInfo) {
@@ -52,6 +53,8 @@ class MainActivity : ComponentActivity() {
                                 onReadingRequested = { ts, spread -> vm.startReading(ts, spread) },
                                 onManualCoordinates = { lat, lon, ts, spread -> vm.startReadingAt(lat, lon, ts, spread) },
                                 onShowInfo = { showInfo = true },
+                                history = history,
+                                onRestoreReading = { vm.restoreReading(it) },
                                 modifier = Modifier.fillMaxSize(),
                             )
 

@@ -75,6 +75,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.astrotarot.R
+import com.astrotarot.data.ReadingRecord
 import com.astrotarot.engine.domain.model.Spread
 import com.astrotarot.engine.domain.model.Spreads
 import com.astrotarot.ui.ReadingUiState
@@ -153,6 +154,8 @@ fun WelcomeScreen(
     onManualCoordinates: (lat: Double, lon: Double, timestamp: Long, spread: Spread) -> Unit,
     onShowInfo: () -> Unit,
     modifier: Modifier = Modifier,
+    history: List<ReadingRecord> = emptyList(),
+    onRestoreReading: (ReadingRecord) -> Unit = {},
 ) {
     val context = LocalContext.current
     val scope   = rememberCoroutineScope()
@@ -161,6 +164,7 @@ fun WelcomeScreen(
     var showTime      by remember { mutableStateOf(false) }
     var showZonePicker by remember { mutableStateOf(false) }
     var showSpreadPicker by remember { mutableStateOf(false) }
+    var showHistory by remember { mutableStateOf(false) }
     var selectedSpread by remember { mutableStateOf(Spreads.ANGLES) }
 
     // Location search state
@@ -255,6 +259,14 @@ fun WelcomeScreen(
         )
     }
 
+    if (showHistory) {
+        HistoryPickerDialog(
+            history   = history,
+            onSelect  = onRestoreReading,
+            onDismiss = { showHistory = false },
+        )
+    }
+
     if (showSpreadPicker) {
         SpreadPickerDialog(
             currentSpread = selectedSpread,
@@ -306,12 +318,23 @@ fun WelcomeScreen(
                 textAlign = TextAlign.Center,
             )
 
-            TextButton(onClick = onShowInfo) {
-                Text(
-                    text = "How does this work?",
-                    color = Gold.copy(alpha = 0.7f),
-                    style = MaterialTheme.typography.bodySmall,
-                )
+            Row {
+                TextButton(onClick = onShowInfo) {
+                    Text(
+                        text = "How does this work?",
+                        color = Gold.copy(alpha = 0.7f),
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+                if (history.isNotEmpty()) {
+                    TextButton(onClick = { showHistory = true }) {
+                        Text(
+                            text = "Past readings",
+                            color = Gold.copy(alpha = 0.7f),
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                }
             }
 
             Spacer(Modifier.height(40.dp))
@@ -587,6 +610,65 @@ fun WelcomeScreen(
             }
         }
     }
+}
+
+// ── Past readings dialog ──────────────────────────────────────────────────────
+
+@Composable
+private fun HistoryPickerDialog(
+    history: List<ReadingRecord>,
+    onSelect: (ReadingRecord) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor   = IndigoSurface,
+        shape            = RoundedCornerShape(8.dp),
+        modifier         = Modifier.border(1.dp, Gold.copy(alpha = 0.4f), RoundedCornerShape(8.dp)),
+        title = {
+            Text(
+                "Past Readings",
+                style = MaterialTheme.typography.titleMedium,
+                color = Gold,
+            )
+        },
+        text = {
+            LazyColumn(modifier = Modifier.heightIn(max = 380.dp)) {
+                items(history) { record ->
+                    val moment = LocalDateTime.ofInstant(
+                        java.time.Instant.ofEpochMilli(record.timestamp),
+                        ZoneId.systemDefault(),
+                    )
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onSelect(record); onDismiss() }
+                            .padding(vertical = 10.dp, horizontal = 4.dp),
+                    ) {
+                        Text(
+                            text  = Spreads.byId(record.spreadId).name,
+                            color = Ivory,
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.Bold,
+                        )
+                        Text(
+                            text  = "${moment.format(DATE_TIME_FMT)}  ·  ${record.cards.size} card${if (record.cards.size == 1) "" else "s"}",
+                            color = DimIvory,
+                            style = MaterialTheme.typography.labelSmall,
+                        )
+                    }
+                    if (record !== history.last()) {
+                        HorizontalDivider(color = DimIvory.copy(alpha = 0.08f))
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel", color = DimIvory, style = MaterialTheme.typography.bodySmall)
+            }
+        },
+    )
 }
 
 // ── Timezone picker dialog ────────────────────────────────────────────────────

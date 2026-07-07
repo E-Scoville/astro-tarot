@@ -1,32 +1,33 @@
 package com.astrotarot.ui
 
-import android.annotation.SuppressLint
-import android.app.Application
-import androidx.lifecycle.AndroidViewModel
+import android.content.Context
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
-import com.astrotarot.engine.data.FULL_DECK
-import com.astrotarot.engine.data.LocalEphemerisCalculator
-import com.astrotarot.engine.domain.AspectCalculator
-import com.astrotarot.engine.domain.TarotAstrologyEngine
+import androidx.lifecycle.viewmodel.initializer
+import androidx.lifecycle.viewmodel.viewModelFactory
+import com.astrotarot.data.EngineReadingBuilder
+import com.astrotarot.data.FileReadingHistoryStore
+import com.astrotarot.data.FusedLocationProvider
+import com.astrotarot.data.LocationProvider
+import com.astrotarot.data.ReadingBuilder
+import com.astrotarot.data.ReadingHistoryStore
+import com.astrotarot.data.ReadingRecord
+import com.astrotarot.data.toRecord
 import com.astrotarot.engine.domain.model.Aspect
 import com.astrotarot.engine.domain.model.PlanetPosition
 import com.astrotarot.engine.domain.model.Spread
 import com.astrotarot.engine.domain.model.Spreads
 import com.astrotarot.engine.domain.model.WeightedCard
-import com.google.android.gms.location.CurrentLocationRequest
-import com.google.android.gms.location.LocationServices
-import com.google.android.gms.location.Priority
-import com.google.android.gms.tasks.CancellationTokenSource
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
-import kotlin.coroutines.resume
-import kotlin.coroutines.resumeWithException
+import java.io.File
 
 sealed class ReadingUiState {
     data object Idle : ReadingUiState()
@@ -46,25 +47,36 @@ sealed class ReadingUiState {
     data class Error(val message: String) : ReadingUiState()
 }
 
-class ReadingViewModel(app: Application) : AndroidViewModel(app) {
-
-    private val fusedClient = LocationServices.getFusedLocationProviderClient(app)
-    private val engine = TarotAstrologyEngine(FULL_DECK)
+class ReadingViewModel(
+    private val locationProvider: LocationProvider,
+    private val historyStore: ReadingHistoryStore,
+    private val readingBuilder: ReadingBuilder = EngineReadingBuilder,
+    private val computeDispatcher: CoroutineDispatcher = Dispatchers.Default,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+) : ViewModel() {
 
     private val _state = MutableStateFlow<ReadingUiState>(ReadingUiState.Idle)
     val state: StateFlow<ReadingUiState> = _state.asStateFlow()
 
-    fun startReading(timestamp: Long = System.currentTimeMillis(), spread: Spread = Spreads.ANGLES) {
-        if (_state.value is ReadingUiState.FetchingLocation ||
-            _state.value is ReadingUiState.Calculating) return
+    private val _history = MutableStateFlow<List<ReadingRecord>>(emptyList())
+    val history: StateFlow<List<ReadingRecord>> = _history.asStateFlow()
 
+    init {
+        viewModelScope.launch {
+            _history.value = withContext(ioDispatcher) {
+                runCatching { historyStore.load() }.getOrDefault(emptyList())
+            }
+        }
+    }
+
+    fun startReading(timestamp: Long = System.currentTimeMillis(), spread: Spread = Spreads.ANGLES) {
+        if (isBusy()) return
         viewModelScope.launch {
             _state.value = ReadingUiState.FetchingLocation
             try {
-                val (lat, lon) = fetchCoordinates()
+                val (lat, lon) = locationProvider.currentCoordinates()
                 _state.value = ReadingUiState.Calculating
-                val result = withContext(Dispatchers.Default) { buildReading(lat, lon, timestamp, spread) }
-                _state.value = result
+                finishReading(lat, lon, timestamp, spread)
             } catch (e: CancellationException) {
                 throw e   // never swallow cancellation — structured concurrency depends on it
             } catch (e: Exception) {
@@ -79,63 +91,60 @@ class ReadingViewModel(app: Application) : AndroidViewModel(app) {
         timestamp: Long = System.currentTimeMillis(),
         spread: Spread = Spreads.ANGLES,
     ) {
-        if (_state.value is ReadingUiState.FetchingLocation ||
-            _state.value is ReadingUiState.Calculating) return
-
+        if (isBusy()) return
         viewModelScope.launch {
             _state.value = ReadingUiState.Calculating
-            val result = withContext(Dispatchers.Default) { buildReading(lat, lon, timestamp, spread) }
-            _state.value = result
+            try {
+                finishReading(lat, lon, timestamp, spread)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _state.value = ReadingUiState.Error(e.message ?: "Could not calculate reading")
+            }
         }
     }
 
-    @SuppressLint("MissingPermission")
-    private suspend fun fetchCoordinates(): Pair<Double, Double> {
-        // Try last known location first — this responds instantly to emulator
-        // mock locations (adb emu geo fix) and is cheaper than a fresh fix.
-        val last = suspendCancellableCoroutine<android.location.Location?> { cont ->
-            fusedClient.lastLocation
-                .addOnSuccessListener { if (cont.isActive) cont.resume(it) }
-                .addOnFailureListener { if (cont.isActive) cont.resume(null) }
+    /** Rebuild a past reading from history. Restored readings are not re-saved. */
+    fun restoreReading(record: ReadingRecord) {
+        if (isBusy()) return
+        viewModelScope.launch {
+            _state.value = ReadingUiState.Calculating
+            try {
+                _state.value = withContext(computeDispatcher) { readingBuilder.restore(record) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _state.value = ReadingUiState.Error(e.message ?: "Could not restore reading")
+            }
         }
-        if (last != null) return last.latitude to last.longitude
-
-        // Fall back to a fresh location fix (real device, cold GPS).
-        val fresh = suspendCancellableCoroutine<android.location.Location?> { cont ->
-            val cts = CancellationTokenSource()
-            cont.invokeOnCancellation { cts.cancel() }
-            val request = CurrentLocationRequest.Builder()
-                .setPriority(Priority.PRIORITY_HIGH_ACCURACY)
-                .setDurationMillis(15_000L)
-                .build()
-            fusedClient.getCurrentLocation(request, cts.token)
-                .addOnSuccessListener { if (cont.isActive) cont.resume(it) }
-                .addOnFailureListener { if (cont.isActive) cont.resumeWithException(it) }
-        }
-        return fresh?.latitude?.let { it to fresh.longitude }
-            ?: throw Exception("Could not determine location.\nTry entering coordinates manually.")
-    }
-
-    private fun buildReading(
-        lat: Double, lon: Double,
-        timestamp: Long = System.currentTimeMillis(),
-        spread: Spread = Spreads.ANGLES,
-    ): ReadingUiState.Success {
-        val astro   = LocalEphemerisCalculator.calculate(lat, lon, timestamp)
-        val aspects = AspectCalculator.calculate(astro.positions)
-        val reading = engine.generateSpreadReading(astro.positions, spread, aspects = aspects)
-        return ReadingUiState.Success(
-            reading         = reading,
-            positions       = astro.positions,
-            aspects         = aspects,
-            ascendantDegree = astro.ascendantDegree,
-            midheavenDegree = astro.midheavenDegree,
-            lat             = lat,
-            lon             = lon,
-            timestamp       = timestamp,
-            spread          = spread,
-        )
     }
 
     fun reset() { _state.value = ReadingUiState.Idle }
+
+    private fun isBusy(): Boolean =
+        _state.value is ReadingUiState.FetchingLocation ||
+        _state.value is ReadingUiState.Calculating
+
+    private suspend fun finishReading(lat: Double, lon: Double, timestamp: Long, spread: Spread) {
+        val success = withContext(computeDispatcher) {
+            readingBuilder.build(lat, lon, timestamp, spread)
+        }
+        // Persist before showing; a failed save must not block the reading.
+        runCatching {
+            withContext(ioDispatcher) { historyStore.save(success.toRecord()) }
+            _history.value = withContext(ioDispatcher) { historyStore.load() }
+        }
+        _state.value = success
+    }
+
+    companion object {
+        fun factory(context: Context): ViewModelProvider.Factory = viewModelFactory {
+            initializer {
+                ReadingViewModel(
+                    locationProvider = FusedLocationProvider(context),
+                    historyStore     = FileReadingHistoryStore(File(context.filesDir, "reading_history.json")),
+                )
+            }
+        }
+    }
 }
