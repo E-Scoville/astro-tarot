@@ -80,6 +80,7 @@ import com.astrotarot.engine.domain.model.Spread
 import com.astrotarot.engine.domain.model.Spreads
 import com.astrotarot.ui.ReadingUiState
 import com.astrotarot.ui.artNouveauBackground
+import com.astrotarot.ui.historyRowText
 import com.astrotarot.ui.theme.DimIvory
 import com.astrotarot.ui.theme.Gold
 import com.astrotarot.ui.theme.GoldFrameBrush
@@ -635,9 +636,11 @@ private fun HistoryPickerDialog(
         text = {
             LazyColumn(modifier = Modifier.heightIn(max = 380.dp)) {
                 items(history) { record ->
-                    val moment = LocalDateTime.ofInstant(
-                        java.time.Instant.ofEpochMilli(record.timestamp),
-                        ZoneId.systemDefault(),
+                    val rowText = historyRowText(
+                        castFor   = record.timestamp,
+                        drawnAt   = record.savedAt,
+                        cardCount = record.cards.size,
+                        zone      = ZoneId.systemDefault(),
                     )
                     Column(
                         modifier = Modifier
@@ -646,16 +649,25 @@ private fun HistoryPickerDialog(
                             .padding(vertical = 10.dp, horizontal = 4.dp),
                     ) {
                         Text(
-                            text  = Spreads.byId(record.spreadId).name,
+                            // The name the reading was shown under, not whatever that
+                            // spread id resolves to today.
+                            text  = record.spread?.name ?: Spreads.byId(record.spreadId).name,
                             color = Ivory,
                             style = MaterialTheme.typography.bodySmall,
                             fontWeight = FontWeight.Bold,
                         )
                         Text(
-                            text  = "${moment.format(DATE_TIME_FMT)}  ·  ${record.cards.size} card${if (record.cards.size == 1) "" else "s"}",
+                            text  = rowText.castLine,
                             color = DimIvory,
                             style = MaterialTheme.typography.labelSmall,
                         )
+                        rowText.drawnLine?.let { drawn ->
+                            Text(
+                                text  = drawn,
+                                color = DimIvory.copy(alpha = 0.7f),
+                                style = MaterialTheme.typography.labelSmall,
+                            )
+                        }
                     }
                     if (record !== history.last()) {
                         HorizontalDivider(color = DimIvory.copy(alpha = 0.08f))
