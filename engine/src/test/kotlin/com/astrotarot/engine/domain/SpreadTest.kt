@@ -141,8 +141,11 @@ class SpreadTest {
 
     @Test
     fun `reversal is judged against the full sky regardless of position binding`() {
-        // The same card must get the same reversed flag whether it lands in a
-        // planet-bound, house-bound, or unbound position under the same sky.
+        // Reversal odds depend on the card's standing in the FULL sky, never on the
+        // scoped table a bound position drew it from. Since reversal is a roll rather
+        // than a fixed flag, the invariant shows up as a rate: a given card reverses
+        // about as often whether it arrived via a planet-bound, house-bound, or
+        // unbound position. Seeds are fixed, so this comparison is reproducible.
         val transits = baselineTransits()
         val spreads = listOf(
             Spread("t1", "T", "", listOf(SpreadPosition("Unbound"))),
@@ -150,19 +153,31 @@ class SpreadTest {
             Spread("t3", "T", "", listOf(SpreadPosition("House 5", house = 5))),
         )
 
-        val reversalByCard = mutableMapOf<String, Boolean>()
-        for (spread in spreads) {
-            for (seed in 0 until 200) {
+        // card name -> binding index -> (drawn, reversed)
+        val stats = HashMap<String, Array<IntArray>>()
+        for ((i, spread) in spreads.withIndex()) {
+            for (seed in 0 until 6000) {
                 val card = engine.generateSpreadReading(transits, spread, random = Random(seed)).first()
-                reversalByCard[card.card.name]?.let { seen ->
-                    assertEquals(
-                        "card ${card.card.name} got inconsistent reversal across positions",
-                        seen, card.reversed,
-                    )
-                }
-                reversalByCard[card.card.name] = card.reversed
+                val row = stats.getOrPut(card.card.name) { Array(spreads.size) { IntArray(2) } }[i]
+                row[0]++
+                if (card.reversed) row[1]++
             }
         }
+
+        var compared = 0
+        for ((name, byBinding) in stats) {
+            val rates = byBinding
+                .filter { it[0] >= MIN_SAMPLES }
+                .map { it[1].toDouble() / it[0] }
+            if (rates.size < 2) continue
+            compared++
+            val spread = rates.max() - rates.min()
+            assertTrue(
+                "card $name reversed at materially different rates across bindings: $rates",
+                spread <= RATE_TOLERANCE,
+            )
+        }
+        assertTrue("no card had enough draws in two or more bindings to compare", compared >= 3)
     }
 
     @Test
@@ -201,5 +216,13 @@ class SpreadTest {
         assertEquals(r1.map { it.card.name }, r2.map { it.card.name })
         assertEquals(r1.map { it.reversed }, r2.map { it.reversed })
         assertEquals(r1.map { it.primaryInfluence }, r2.map { it.primaryInfluence })
+    }
+
+    companion object {
+        /** Draws a card needs under one binding before its rate is worth comparing. */
+        private const val MIN_SAMPLES = 150
+
+        /** Allowed spread between a card's reversal rates across bindings. */
+        private const val RATE_TOLERANCE = 0.18
     }
 }

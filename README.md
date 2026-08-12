@@ -12,7 +12,8 @@ is weighted by its astrological correspondences — ruling planet or sign for
 the Major Arcana, decans for the numbered minors, degree ranges for the
 courts, elements for the aces — plus bonuses from active aspects. Cards are
 then drawn by weighted sample; a card drawn despite low planetary weight
-appears reversed, tagged with the retrograde or tension aspect that best
+may arrive reversed — the odds rise the further below average the sky
+weighted it — tagged with the retrograde or tension aspect that best
 explains the resistance.
 
 ## Structure

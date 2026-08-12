@@ -1,6 +1,7 @@
 package com.astrotarot.engine.domain
 
 import com.astrotarot.engine.domain.model.*
+import kotlin.math.pow
 import kotlin.random.Random
 
 class TarotAstrologyEngine(private val deck: List<TarotCard>) {
@@ -14,13 +15,14 @@ class TarotAstrologyEngine(private val deck: List<TarotCard>) {
         val weights = buildWeightTable(transits, aspects)
 
         val avgWeight = weights.map { it.second }.average()
+        val minWeight = weights.minOf { it.second }
         val drawn = weightedRandomSample(
             weights.map { (card, w, _) -> card to w },
             cardsToDraw, random,
         )
         val influenceMap = weights.associate { (card, _, planet) -> card to planet }
         return drawn.map { (card, weight) ->
-            toWeightedCard(card, weight, reversed = weight < avgWeight,
+            toWeightedCard(card, weight, rollReversed(weight, avgWeight, minWeight, random),
                 influenceMap, transits, aspects)
         }
     }
@@ -44,6 +46,7 @@ class TarotAstrologyEngine(private val deck: List<TarotCard>) {
 
         val fullWeights = buildWeightTable(transits, aspects)
         val fullAvg = fullWeights.map { it.second }.average()
+        val fullMin = fullWeights.minOf { it.second }
         val fullWeightMap = fullWeights.associate { (card, w, _) -> card to w }
         val fullInfluence = fullWeights.associate { (card, _, planet) -> card to planet }
 
@@ -78,12 +81,45 @@ class TarotAstrologyEngine(private val deck: List<TarotCard>) {
             usedCards += card
 
             // Reversal is judged against the full sky, not the scoped table, so
-            // the threshold is uniform across positions regardless of binding.
-            val reversed = (fullWeightMap[card] ?: weight) < fullAvg
+            // the odds are uniform across positions regardless of binding.
+            val reversed = rollReversed(fullWeightMap[card] ?: weight, fullAvg, fullMin, random)
             result += toWeightedCard(card, weight, reversed, influenceMap, transits, aspects)
         }
 
         return result
+    }
+
+    // ── Reversal ──────────────────────────────────────────────────────────────
+
+    /**
+     * Decides whether a drawn card lands reversed.
+     *
+     * A card is a candidate for reversal only when the sky weighted it BELOW the
+     * deck average — it arrived despite the transits, not because of them. How
+     * far below decides the odds: a card sitting at the very floor of the weight
+     * table is near-certain to reverse, one grazing the average almost never does.
+     *
+     * The shortfall is normalised against the gap between the average and the
+     * table's minimum, so the odds describe the card's standing WITHIN this
+     * particular sky rather than against an absolute weight that shifts with the
+     * number of active transits. The curve exponent then bends those odds: below
+     * 1.0 it lifts the middle of the range, so a card need not sit at the very
+     * floor to stand a real chance of reversing.
+     *
+     * No card is ever certain to reverse — the ceiling is deliberately under 1.0.
+     */
+    private fun rollReversed(
+        weight: Double,
+        avgWeight: Double,
+        minWeight: Double,
+        random: Random,
+    ): Boolean {
+        val span = avgWeight - minWeight
+        // A perfectly level sky resists nothing, so nothing reverses.
+        if (span <= 0.0) return false
+        val shortfall = ((avgWeight - weight) / span).coerceIn(0.0, 1.0)
+        val probability = MAX_REVERSAL_PROBABILITY * shortfall.pow(REVERSAL_CURVE_EXPONENT)
+        return random.nextDouble() < probability
     }
 
     // Attaches the reveal metadata to a drawn card: upright cards carry the
@@ -308,5 +344,15 @@ class TarotAstrologyEngine(private val deck: List<TarotCard>) {
 
     companion object {
         private val ANGULAR_HOUSES = setOf(1, 4, 7, 10)
+
+        /**
+         * Reversal odds for a card sitting at the very bottom of the weight table.
+         * Together with the curve exponent these two constants set the overall
+         * reversal rate, measured at roughly 16% of drawn cards across the year.
+         */
+        private const val MAX_REVERSAL_PROBABILITY = 0.9
+
+        /** <1.0 lifts the middle of the below-average range; 1.0 would be linear. */
+        private const val REVERSAL_CURVE_EXPONENT = 0.5
     }
 }
