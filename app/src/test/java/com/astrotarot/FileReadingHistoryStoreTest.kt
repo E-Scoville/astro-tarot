@@ -3,7 +3,14 @@ package com.astrotarot
 import com.astrotarot.data.FileReadingHistoryStore
 import com.astrotarot.data.ReadingRecord
 import com.astrotarot.data.SavedCard
+import com.astrotarot.data.SavedSky
+import com.astrotarot.data.SavedSpread
+import com.astrotarot.engine.domain.model.Aspect
+import com.astrotarot.engine.domain.model.AspectType
+import com.astrotarot.engine.domain.model.CelestialBody
+import com.astrotarot.engine.domain.model.PlanetPosition
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -24,6 +31,18 @@ class FileReadingHistoryStoreTest {
             SavedCard("The Magician", 3.25, reversed = false, primaryInfluence = "MERCURY", reversalMarker = null),
             SavedCard("Two of Wands", 1.5, reversed = true, primaryInfluence = "MARS", reversalMarker = "℞"),
         ),
+        sky = SavedSky(
+            positions = listOf(
+                PlanetPosition(CelestialBody.SUN, "ARIES", 5.5, 1, false),
+                PlanetPosition(CelestialBody.MERCURY, "GEMINI", 65.25, 3, true),
+            ),
+            aspects = listOf(
+                Aspect(CelestialBody.SUN, CelestialBody.MERCURY, AspectType.SEXTILE, 1.75),
+            ),
+            ascendantDegree = 123.5,
+            midheavenDegree = 33.25,
+        ),
+        spread = SavedSpread("The Three Angles", listOf("I — Ascendant", "II — Midheaven", "III — Root")),
     )
 
     @Test
@@ -70,5 +89,52 @@ class FileReadingHistoryStoreTest {
         )
         store.save(bare)
         assertEquals(bare, store.load().first())
+    }
+
+    @Test
+    fun `a record written before the sky was persisted still loads`() {
+        // Exactly the shape the old store wrote: no "sky" or "spread" keys.
+        val legacy = """
+            [{"savedAt":9,"timestamp":1720000000000,"lat":40.2338,"lon":-111.6585,
+              "spreadId":"angles",
+              "cards":[{"name":"The Fool","weight":2.0,"reversed":false}]}]
+        """.trimIndent()
+        val store = FileReadingHistoryStore(tmp.newFile("h.json").apply { writeText(legacy) })
+
+        val loaded = store.load()
+        assertEquals(1, loaded.size)
+        assertEquals(9L, loaded.first().savedAt)
+        assertNull("legacy record has no stored sky", loaded.first().sky)
+        assertNull("legacy record has no stored spread", loaded.first().spread)
+        assertEquals("The Fool", loaded.first().cards.single().name)
+    }
+
+    @Test
+    fun `an unreadable sky block degrades to null without losing the record`() {
+        val damaged = """
+            [{"savedAt":3,"timestamp":1720000000000,"lat":1.0,"lon":2.0,
+              "spreadId":"angles",
+              "cards":[{"name":"The Fool","weight":2.0,"reversed":false}],
+              "sky":{"positions":[{"planet":"NOT_A_PLANET","sign":"ARIES","longitude":1.0,
+                     "house":1,"isRetrograde":false}],"aspects":[],
+                     "ascendantDegree":0.0,"midheavenDegree":0.0}}]
+        """.trimIndent()
+        val store = FileReadingHistoryStore(tmp.newFile("h.json").apply { writeText(damaged) })
+
+        val loaded = store.load()
+        assertEquals(1, loaded.size)
+        assertNull(loaded.first().sky)
+        assertEquals("The Fool", loaded.first().cards.single().name)
+    }
+
+    @Test
+    fun `sky and spread survive a save and load cycle unchanged`() {
+        val store = FileReadingHistoryStore(tmp.newFile("h.json"))
+        val original = record(savedAt = 11L)
+        store.save(original)
+
+        val loaded = store.load().first()
+        assertEquals(original.sky, loaded.sky)
+        assertEquals(original.spread, loaded.spread)
     }
 }

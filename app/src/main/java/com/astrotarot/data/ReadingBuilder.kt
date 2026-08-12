@@ -6,6 +6,7 @@ import com.astrotarot.engine.domain.AspectCalculator
 import com.astrotarot.engine.domain.TarotAstrologyEngine
 import com.astrotarot.engine.domain.model.CelestialBody
 import com.astrotarot.engine.domain.model.Spread
+import com.astrotarot.engine.domain.model.SpreadPosition
 import com.astrotarot.engine.domain.model.Spreads
 import com.astrotarot.engine.domain.model.WeightedCard
 import com.astrotarot.ui.ReadingUiState
@@ -14,7 +15,7 @@ import com.astrotarot.ui.ReadingUiState
 interface ReadingBuilder {
     fun build(lat: Double, lon: Double, timestamp: Long, spread: Spread): ReadingUiState.Success
 
-    /** Rebuilds a past reading: sky recomputed from the inputs, cards taken from the record. */
+    /** Reopens a past reading exactly as it was recorded, deriving nothing anew. */
     fun restore(record: ReadingRecord): ReadingUiState.Success
 }
 
@@ -41,8 +42,6 @@ object EngineReadingBuilder : ReadingBuilder {
     }
 
     override fun restore(record: ReadingRecord): ReadingUiState.Success {
-        val astro   = LocalEphemerisCalculator.calculate(record.lat, record.lon, record.timestamp)
-        val aspects = AspectCalculator.calculate(astro.positions)
         val reading = record.cards.mapNotNull { saved ->
             deckByName[saved.name]?.let { card ->
                 WeightedCard(
@@ -56,16 +55,53 @@ object EngineReadingBuilder : ReadingBuilder {
             }
         }
         if (reading.isEmpty()) throw IllegalStateException("Saved reading could not be restored.")
+
+        // The stored sky is authoritative. Recomputation is only for records written
+        // before the sky was persisted, and is a best effort: the ephemeris and the
+        // weighting that produced those cards may since have changed.
+        val sky = record.sky ?: legacySky(record)
+
         return ReadingUiState.Success(
             reading         = reading,
-            positions       = astro.positions,
-            aspects         = aspects,
-            ascendantDegree = astro.ascendantDegree,
-            midheavenDegree = astro.midheavenDegree,
+            positions       = sky.positions,
+            aspects         = sky.aspects,
+            ascendantDegree = sky.ascendantDegree,
+            midheavenDegree = sky.midheavenDegree,
             lat             = record.lat,
             lon             = record.lon,
             timestamp       = record.timestamp,
-            spread          = Spreads.byId(record.spreadId),
+            spread          = restoredSpread(record, reading.size),
+        )
+    }
+
+    private fun legacySky(record: ReadingRecord): SavedSky {
+        val astro = LocalEphemerisCalculator.calculate(record.lat, record.lon, record.timestamp)
+        return SavedSky(
+            positions       = astro.positions,
+            aspects         = AspectCalculator.calculate(astro.positions),
+            ascendantDegree = astro.ascendantDegree,
+            midheavenDegree = astro.midheavenDegree,
+        )
+    }
+
+    /**
+     * The spread as the reading was shown under. Stored labels win; a legacy record
+     * falls back to the live definition, padded so every card keeps a label even if
+     * the spread has since been renamed, resized, or removed altogether.
+     */
+    private fun restoredSpread(record: ReadingRecord, cardCount: Int): Spread {
+        record.spread?.let { saved ->
+            return Spread(
+                id        = record.spreadId,
+                name      = saved.name,
+                tagline   = "",
+                positions = saved.positionLabels.map { SpreadPosition(it) },
+            )
+        }
+        val live = Spreads.byId(record.spreadId)
+        if (live.positions.size >= cardCount) return live
+        return live.copy(
+            positions = live.positions + List(cardCount - live.positions.size) { SpreadPosition("") },
         )
     }
 }
@@ -86,4 +122,6 @@ fun ReadingUiState.Success.toRecord(savedAt: Long = System.currentTimeMillis()):
                 reversalMarker   = it.reversalMarker,
             )
         },
+        sky       = SavedSky(positions, aspects, ascendantDegree, midheavenDegree),
+        spread    = SavedSpread(spread.name, spread.positions.map { it.label }),
     )
