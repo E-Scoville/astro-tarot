@@ -18,6 +18,9 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.long
 import kotlinx.serialization.json.put
 import java.io.File
+import java.nio.file.AtomicMoveNotSupportedException
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 
 /** One card as it appeared in a saved reading. */
 data class SavedCard(
@@ -69,7 +72,13 @@ interface ReadingHistoryStore {
 
 /**
  * Stores reading history as a JSON array in a single file, newest first,
- * capped at [maxEntries]. A missing or corrupt file reads as empty history.
+ * capped at [maxEntries].
+ *
+ * Damage is contained to the smallest unit that can absorb it: an unreadable sky
+ * or spread block costs only itself (the reading falls back to recomputation), an
+ * unreadable record costs only that reading, and only a file that is not a JSON
+ * array at all reads as empty history. Writes are atomic, so an interrupted save
+ * leaves the previous history intact rather than a half-written file.
  */
 class FileReadingHistoryStore(
     private val file: File,
@@ -78,34 +87,42 @@ class FileReadingHistoryStore(
 
     override fun load(): List<ReadingRecord> {
         if (!file.exists()) return emptyList()
-        return try {
-            Json.parseToJsonElement(file.readText()).jsonArray.map { el ->
-                val o = el.jsonObject
-                ReadingRecord(
-                    savedAt   = o.getValue("savedAt").jsonPrimitive.long,
-                    timestamp = o.getValue("timestamp").jsonPrimitive.long,
-                    lat       = o.getValue("lat").jsonPrimitive.double,
-                    lon       = o.getValue("lon").jsonPrimitive.double,
-                    spreadId  = o.getValue("spreadId").jsonPrimitive.content,
-                    cards     = o.getValue("cards").jsonArray.map { c ->
-                        val card = c.jsonObject
-                        SavedCard(
-                            name             = card.getValue("name").jsonPrimitive.content,
-                            weight           = card.getValue("weight").jsonPrimitive.double,
-                            reversed         = card.getValue("reversed").jsonPrimitive.boolean,
-                            primaryInfluence = card["primaryInfluence"]?.jsonPrimitive?.takeIf { it.isString }?.content,
-                            reversalMarker   = card["reversalMarker"]?.jsonPrimitive?.takeIf { it.isString }?.content,
-                        )
-                    },
-                    // A record whose sky or spread block is absent or unreadable falls
-                    // back to recomputation rather than costing the whole history.
-                    sky    = o["sky"]?.let { runCatching { parseSky(it.jsonObject) }.getOrNull() },
-                    spread = o["spread"]?.let { runCatching { parseSpread(it.jsonObject) }.getOrNull() },
-                )
-            }
-        } catch (e: Exception) {
-            emptyList()
+        val entries = runCatching {
+            Json.parseToJsonElement(file.readText()).jsonArray
+        }.getOrNull() ?: return emptyList()
+
+        // One malformed entry drops itself and nothing else.
+        return entries.mapNotNull { el ->
+            runCatching { parseRecord(el.jsonObject) }.getOrNull()
         }
+    }
+
+    private fun parseRecord(o: JsonObject): ReadingRecord {
+        val cards = o.getValue("cards").jsonArray.map { c ->
+            val card = c.jsonObject
+            SavedCard(
+                name             = card.getValue("name").jsonPrimitive.content,
+                weight           = card.getValue("weight").jsonPrimitive.double,
+                reversed         = card.getValue("reversed").jsonPrimitive.boolean,
+                primaryInfluence = card["primaryInfluence"]?.jsonPrimitive?.takeIf { it.isString }?.content,
+                reversalMarker   = card["reversalMarker"]?.jsonPrimitive?.takeIf { it.isString }?.content,
+            )
+        }
+        // A reading with no cards cannot be reopened, so it is not worth keeping.
+        check(cards.isNotEmpty()) { "reading record has no cards" }
+
+        return ReadingRecord(
+            savedAt   = o.getValue("savedAt").jsonPrimitive.long,
+            timestamp = o.getValue("timestamp").jsonPrimitive.long,
+            lat       = o.getValue("lat").jsonPrimitive.double,
+            lon       = o.getValue("lon").jsonPrimitive.double,
+            spreadId  = o.getValue("spreadId").jsonPrimitive.content,
+            cards     = cards,
+            // A record whose sky or spread block is absent or unreadable falls
+            // back to recomputation rather than costing the whole reading.
+            sky    = o["sky"]?.let { runCatching { parseSky(it.jsonObject) }.getOrNull() },
+            spread = o["spread"]?.let { runCatching { parseSpread(it.jsonObject) }.getOrNull() },
+        )
     }
 
     private fun parseSky(o: JsonObject) = SavedSky(
@@ -191,6 +208,26 @@ class FileReadingHistoryStore(
             }
         }
         file.parentFile?.mkdirs()
-        file.writeText(json.toString())
+        writeAtomically(json.toString())
+    }
+
+    /**
+     * Writes via a sibling temp file and a rename, so a save interrupted midway
+     * cannot leave a truncated history behind. Falls back to a direct write if the
+     * filesystem will not do an atomic move.
+     */
+    private fun writeAtomically(text: String) {
+        val tmp = File(file.parentFile, "${file.name}.tmp")
+        try {
+            tmp.writeText(text)
+            try {
+                Files.move(tmp.toPath(), file.toPath(),
+                    StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
+            } catch (e: AtomicMoveNotSupportedException) {
+                Files.move(tmp.toPath(), file.toPath(), StandardCopyOption.REPLACE_EXISTING)
+            }
+        } finally {
+            tmp.delete()
+        }
     }
 }

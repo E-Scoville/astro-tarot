@@ -128,6 +128,75 @@ class FileReadingHistoryStoreTest {
     }
 
     @Test
+    fun `one malformed record is dropped and its siblings survive`() {
+        // Middle entry is missing the required "lat" field.
+        val mixed = """
+            [{"savedAt":3,"timestamp":100,"lat":1.0,"lon":2.0,"spreadId":"angles",
+              "cards":[{"name":"The Fool","weight":2.0,"reversed":false}]},
+             {"savedAt":2,"timestamp":100,"lon":2.0,"spreadId":"angles",
+              "cards":[{"name":"The Magician","weight":2.0,"reversed":false}]},
+             {"savedAt":1,"timestamp":100,"lat":1.0,"lon":2.0,"spreadId":"angles",
+              "cards":[{"name":"The Empress","weight":2.0,"reversed":true}]}]
+        """.trimIndent()
+        val store = FileReadingHistoryStore(tmp.newFile("h.json").apply { writeText(mixed) })
+
+        val loaded = store.load()
+        assertEquals(listOf(3L, 1L), loaded.map { it.savedAt })
+    }
+
+    @Test
+    fun `a record with an unreadable card is dropped rather than silently shortened`() {
+        // Second entry's card is missing "weight"; a partial reading would misrepresent
+        // what was actually drawn, so the whole record goes.
+        val mixed = """
+            [{"savedAt":2,"timestamp":100,"lat":1.0,"lon":2.0,"spreadId":"angles",
+              "cards":[{"name":"The Fool","weight":2.0,"reversed":false},
+                       {"name":"The Star","reversed":false}]},
+             {"savedAt":1,"timestamp":100,"lat":1.0,"lon":2.0,"spreadId":"angles",
+              "cards":[{"name":"The Empress","weight":2.0,"reversed":true}]}]
+        """.trimIndent()
+        val store = FileReadingHistoryStore(tmp.newFile("h.json").apply { writeText(mixed) })
+
+        val loaded = store.load()
+        assertEquals(listOf(1L), loaded.map { it.savedAt })
+    }
+
+    @Test
+    fun `a record with no cards is dropped`() {
+        val empty = """
+            [{"savedAt":1,"timestamp":100,"lat":1.0,"lon":2.0,"spreadId":"angles","cards":[]}]
+        """.trimIndent()
+        val store = FileReadingHistoryStore(tmp.newFile("h.json").apply { writeText(empty) })
+
+        assertTrue(store.load().isEmpty())
+    }
+
+    @Test
+    fun `saving after a bad record prunes it and keeps the good ones`() {
+        val mixed = """
+            [{"savedAt":3,"timestamp":100,"lat":1.0,"lon":2.0,"spreadId":"angles",
+              "cards":[{"name":"The Fool","weight":2.0,"reversed":false}]},
+             {"savedAt":2,"timestamp":100,"spreadId":"angles","cards":[]}]
+        """.trimIndent()
+        val store = FileReadingHistoryStore(tmp.newFile("h.json").apply { writeText(mixed) })
+
+        store.save(record(savedAt = 4L))
+
+        val loaded = store.load()
+        assertEquals(listOf(4L, 3L), loaded.map { it.savedAt })
+    }
+
+    @Test
+    fun `an interrupted save leaves no stray temp file behind`() {
+        val file = tmp.newFile("h.json")
+        val store = FileReadingHistoryStore(file)
+        store.save(record(savedAt = 1L))
+
+        assertTrue(tmp.root.listFiles()!!.none { it.name.endsWith(".tmp") })
+        assertEquals(1, store.load().size)
+    }
+
+    @Test
     fun `sky and spread survive a save and load cycle unchanged`() {
         val store = FileReadingHistoryStore(tmp.newFile("h.json"))
         val original = record(savedAt = 11L)
