@@ -68,21 +68,26 @@ data class ReadingRecord(
 interface ReadingHistoryStore {
     fun load(): List<ReadingRecord>
     fun save(record: ReadingRecord)
+
+    /** Removes the reading saved at [savedAt]. Absent keys are a no-op. */
+    fun delete(savedAt: Long)
 }
 
 /**
- * Stores reading history as a JSON array in a single file, newest first,
- * capped at [maxEntries].
+ * Stores saved readings as a JSON array in a single file, newest first.
+ *
+ * The collection is deliberately uncapped: readings are kept only because someone
+ * chose to keep them, so nothing is evicted to make room and a reading leaves only
+ * when it is deleted.
  *
  * Damage is contained to the smallest unit that can absorb it: an unreadable sky
  * or spread block costs only itself (the reading falls back to recomputation), an
  * unreadable record costs only that reading, and only a file that is not a JSON
- * array at all reads as empty history. Writes are atomic, so an interrupted save
- * leaves the previous history intact rather than a half-written file.
+ * array at all reads as empty. Writes are atomic, so an interrupted save leaves
+ * the previous collection intact rather than a half-written file.
  */
 class FileReadingHistoryStore(
     private val file: File,
-    private val maxEntries: Int = 20,
 ) : ReadingHistoryStore {
 
     override fun load(): List<ReadingRecord> {
@@ -155,9 +160,18 @@ class FileReadingHistoryStore(
     )
 
     override fun save(record: ReadingRecord) {
-        val updated = (listOf(record) + load()).take(maxEntries)
+        // Re-saving the same reading replaces it rather than duplicating it.
+        writeAll(listOf(record) + load().filterNot { it.savedAt == record.savedAt })
+    }
+
+    override fun delete(savedAt: Long) {
+        val remaining = load().filterNot { it.savedAt == savedAt }
+        writeAll(remaining)
+    }
+
+    private fun writeAll(records: List<ReadingRecord>) {
         val json = buildJsonArray {
-            for (r in updated) {
+            for (r in records) {
                 add(buildJsonObject {
                     put("savedAt", r.savedAt)
                     put("timestamp", r.timestamp)

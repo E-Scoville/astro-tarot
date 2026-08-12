@@ -20,6 +20,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -54,7 +55,11 @@ class ReadingViewModelTest {
         override fun load(): List<ReadingRecord> = records.toList()
         override fun save(record: ReadingRecord) {
             if (failOnSave) throw RuntimeException("disk full")
+            records.removeAll { it.savedAt == record.savedAt }
             records.add(0, record)
+        }
+        override fun delete(savedAt: Long) {
+            records.removeAll { it.savedAt == savedAt }
         }
     }
 
@@ -78,6 +83,7 @@ class ReadingViewModelTest {
 
         override fun restore(record: ReadingRecord): ReadingUiState.Success =
             success(record.lat, record.lon, record.timestamp, Spreads.byId(record.spreadId))
+                .copy(savedAt = record.savedAt)
     }
 
     private fun viewModel(
@@ -101,7 +107,7 @@ class ReadingViewModelTest {
     // ── Tests ─────────────────────────────────────────────────────────────────
 
     @Test
-    fun `startReading reaches Success and persists the reading`() = runTest(dispatcher) {
+    fun `startReading reaches Success without keeping the reading`() = runTest(dispatcher) {
         val history = FakeHistoryStore()
         val vm = viewModel(history = history)
 
@@ -111,9 +117,106 @@ class ReadingViewModelTest {
         val state = vm.state.value
         assertTrue("expected Success, got $state", state is ReadingUiState.Success)
         assertEquals(123L, (state as ReadingUiState.Success).timestamp)
+        assertFalse("a new reading is not kept until asked for", state.isSaved)
+        assertEquals(0, history.records.size)
+        assertEquals(0, vm.history.value.size)
+    }
+
+    @Test
+    fun `saveCurrentReading keeps the reading and marks it saved`() = runTest(dispatcher) {
+        val history = FakeHistoryStore()
+        val vm = viewModel(history = history)
+        vm.startReading(timestamp = 123L, spread = Spreads.SINGLE)
+        testScheduler.advanceUntilIdle()
+
+        vm.saveCurrentReading(savedAt = 500L)
+        testScheduler.advanceUntilIdle()
+
         assertEquals(1, history.records.size)
         assertEquals("single", history.records.first().spreadId)
+        assertEquals(500L, history.records.first().savedAt)
         assertEquals(1, vm.history.value.size)
+        assertTrue((vm.state.value as ReadingUiState.Success).isSaved)
+    }
+
+    @Test
+    fun `saving twice does not duplicate the reading`() = runTest(dispatcher) {
+        val history = FakeHistoryStore()
+        val vm = viewModel(history = history)
+        vm.startReading()
+        testScheduler.advanceUntilIdle()
+
+        vm.saveCurrentReading(savedAt = 500L)
+        testScheduler.advanceUntilIdle()
+        vm.saveCurrentReading(savedAt = 900L)
+        testScheduler.advanceUntilIdle()
+
+        assertEquals(1, history.records.size)
+        assertEquals(500L, history.records.first().savedAt)
+    }
+
+    @Test
+    fun `a reading that fails to save is not reported as kept`() = runTest(dispatcher) {
+        val history = FakeHistoryStore().apply { failOnSave = true }
+        val vm = viewModel(history = history)
+        vm.startReading()
+        testScheduler.advanceUntilIdle()
+
+        vm.saveCurrentReading(savedAt = 500L)
+        testScheduler.advanceUntilIdle()
+
+        assertEquals(0, history.records.size)
+        assertFalse(
+            "a failed write must not claim the reading is kept",
+            (vm.state.value as ReadingUiState.Success).isSaved,
+        )
+    }
+
+    @Test
+    fun `saveCurrentReading does nothing when there is no reading on screen`() = runTest(dispatcher) {
+        val history = FakeHistoryStore()
+        val vm = viewModel(history = history)
+
+        vm.saveCurrentReading(savedAt = 500L)
+        testScheduler.advanceUntilIdle()
+
+        assertEquals(0, history.records.size)
+        assertTrue(vm.state.value is ReadingUiState.Idle)
+    }
+
+    @Test
+    fun `deleteReading removes it and refreshes the collection`() = runTest(dispatcher) {
+        val history = FakeHistoryStore().apply {
+            records.add(sampleRecord())
+            records.add(sampleRecord().copy(savedAt = 2L))
+        }
+        val vm = viewModel(history = history)
+        testScheduler.advanceUntilIdle()
+
+        vm.deleteReading(sampleRecord())
+        testScheduler.advanceUntilIdle()
+
+        assertEquals(listOf(2L), history.records.map { it.savedAt })
+        assertEquals(listOf(2L), vm.history.value.map { it.savedAt })
+    }
+
+    @Test
+    fun `deleting the reading on screen marks it no longer kept`() = runTest(dispatcher) {
+        val history = FakeHistoryStore().apply { records.add(sampleRecord()) }
+        val vm = viewModel(history = history)
+        testScheduler.advanceUntilIdle()
+
+        vm.restoreReading(sampleRecord())
+        testScheduler.advanceUntilIdle()
+        assertTrue((vm.state.value as ReadingUiState.Success).isSaved)
+
+        vm.deleteReading(sampleRecord())
+        testScheduler.advanceUntilIdle()
+
+        val state = vm.state.value as ReadingUiState.Success
+        assertFalse("the open reading is no longer in the collection", state.isSaved)
+        // It stays on screen; only its kept status changed.
+        assertEquals(1720000000000L, state.timestamp)
     }
 
     @Test
@@ -173,18 +276,6 @@ class ReadingViewModelTest {
     }
 
     @Test
-    fun `failed save still shows the reading`() = runTest(dispatcher) {
-        val history = FakeHistoryStore().apply { failOnSave = true }
-        val vm = viewModel(history = history)
-
-        vm.startReading()
-        testScheduler.advanceUntilIdle()
-
-        assertTrue(vm.state.value is ReadingUiState.Success)
-        assertEquals(0, history.records.size)
-    }
-
-    @Test
     fun `reset returns to Idle`() = runTest(dispatcher) {
         val vm = viewModel()
         vm.startReading()
@@ -205,7 +296,7 @@ class ReadingViewModelTest {
     }
 
     @Test
-    fun `restoreReading rebuilds Success from a record without re-saving`() = runTest(dispatcher) {
+    fun `restoreReading rebuilds Success from a record without re-keeping it`() = runTest(dispatcher) {
         val history = FakeHistoryStore().apply { records.add(sampleRecord()) }
         val vm = viewModel(history = history)
         testScheduler.advanceUntilIdle()

@@ -110,6 +110,7 @@ private val PLANET_GLYPHS = mapOf(
 fun ReadingScreen(
     state: ReadingUiState.Success,
     onNewReading: () -> Unit,
+    onKeepReading: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val utcTime      = Instant.ofEpochMilli(state.timestamp)
@@ -221,6 +222,42 @@ fun ReadingScreen(
                 )
             }
             Spacer(Modifier.height(32.dp))
+        }
+
+        // ── Keep ───────────────────────────────────────────────
+        item {
+            // Readings are not kept unless asked for, so this is the only way one
+            // enters the collection. Once kept it stays kept; the control becomes a
+            // statement rather than a second action.
+            androidx.compose.material3.OutlinedButton(
+                onClick = onKeepReading,
+                enabled = !state.isSaved,
+                shape  = RoundedCornerShape(4.dp),
+                border = androidx.compose.foundation.BorderStroke(
+                    1.dp,
+                    if (state.isSaved) DimIvory.copy(alpha = 0.25f) else Gold.copy(alpha = 0.5f),
+                ),
+                colors = ButtonDefaults.outlinedButtonColors(
+                    containerColor = IndigoSurface.copy(alpha = 0.25f),
+                    contentColor   = Gold.copy(alpha = 0.85f),
+                    disabledContentColor = DimIvory.copy(alpha = 0.5f),
+                ),
+                modifier = Modifier.fillMaxWidth().height(46.dp),
+            ) {
+                Text(
+                    text = if (state.isSaved) "✦  KEPT  ✦" else "KEEP THIS READING",
+                    letterSpacing = 2.sp,
+                    style = MaterialTheme.typography.labelLarge,
+                )
+            }
+            Text(
+                text = if (state.isSaved) "This reading is in your saved readings."
+                       else "Unkept readings are not stored.",
+                style = MaterialTheme.typography.labelSmall,
+                color = DimIvory.copy(alpha = 0.6f),
+                modifier = Modifier.padding(top = 6.dp),
+            )
+            Spacer(Modifier.height(16.dp))
         }
 
         // ── New Reading ────────────────────────────────────────

@@ -55,6 +55,7 @@ class MainActivity : ComponentActivity() {
                                 onShowInfo = { showInfo = true },
                                 history = history,
                                 onRestoreReading = { vm.restoreReading(it) },
+                                onDeleteReading = { vm.deleteReading(it) },
                                 modifier = Modifier.fillMaxSize(),
                             )
 
@@ -69,6 +70,7 @@ class MainActivity : ComponentActivity() {
                             ReadingScreen(
                                 state = s,
                                 onNewReading = { vm.reset() },
+                                onKeepReading = { vm.saveCurrentReading() },
                                 modifier = Modifier.fillMaxSize(),
                             )
                     }

@@ -43,7 +43,11 @@ sealed class ReadingUiState {
         val lon: Double,
         val timestamp: Long,
         val spread: Spread,
-    ) : ReadingUiState()
+        /** When this reading was kept, or null while it is only being looked at. */
+        val savedAt: Long? = null,
+    ) : ReadingUiState() {
+        val isSaved: Boolean get() = savedAt != null
+    }
     data class Error(val message: String) : ReadingUiState()
 }
 
@@ -104,7 +108,42 @@ class ReadingViewModel(
         }
     }
 
-    /** Rebuild a past reading from history. Restored readings are not re-saved. */
+    /**
+     * Keeps the reading currently on screen. Readings are not kept unless asked for,
+     * so this is the only thing that writes one to the collection. Saving twice is a
+     * no-op rather than a duplicate.
+     */
+    fun saveCurrentReading(savedAt: Long = System.currentTimeMillis()) {
+        val current = _state.value as? ReadingUiState.Success ?: return
+        if (current.isSaved) return
+        viewModelScope.launch {
+            val saved = current.copy(savedAt = savedAt)
+            runCatching {
+                withContext(ioDispatcher) { historyStore.save(saved.toRecord(savedAt)) }
+                _history.value = withContext(ioDispatcher) { historyStore.load() }
+            }.onSuccess {
+                // Only claim the reading is kept once it actually is.
+                if (_state.value === current) _state.value = saved
+            }
+        }
+    }
+
+    /** Removes a saved reading. Irreversible; the caller is expected to have confirmed. */
+    fun deleteReading(record: ReadingRecord) {
+        viewModelScope.launch {
+            runCatching {
+                withContext(ioDispatcher) { historyStore.delete(record.savedAt) }
+                _history.value = withContext(ioDispatcher) { historyStore.load() }
+            }
+            // A reading deleted while open is no longer kept.
+            val current = _state.value
+            if (current is ReadingUiState.Success && current.savedAt == record.savedAt) {
+                _state.value = current.copy(savedAt = null)
+            }
+        }
+    }
+
+    /** Rebuild a past reading from the collection. Restored readings are already kept. */
     fun restoreReading(record: ReadingRecord) {
         if (isBusy()) return
         viewModelScope.launch {
@@ -126,15 +165,10 @@ class ReadingViewModel(
         _state.value is ReadingUiState.Calculating
 
     private suspend fun finishReading(lat: Double, lon: Double, timestamp: Long, spread: Spread) {
-        val success = withContext(computeDispatcher) {
+        // Nothing is written here: a new reading is kept only if asked for.
+        _state.value = withContext(computeDispatcher) {
             readingBuilder.build(lat, lon, timestamp, spread)
         }
-        // Persist before showing; a failed save must not block the reading.
-        runCatching {
-            withContext(ioDispatcher) { historyStore.save(success.toRecord()) }
-            _history.value = withContext(ioDispatcher) { historyStore.load() }
-        }
-        _state.value = success
     }
 
     companion object {

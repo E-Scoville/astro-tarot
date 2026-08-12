@@ -56,13 +56,54 @@ class FileReadingHistoryStoreTest {
     }
 
     @Test
-    fun `newest record comes first and history is capped`() {
-        val store = FileReadingHistoryStore(tmp.newFile("h.json"), maxEntries = 3)
-        for (i in 1L..5L) store.save(record(savedAt = i))
+    fun `newest record comes first and nothing is evicted`() {
+        val store = FileReadingHistoryStore(tmp.newFile("h.json"))
+        for (i in 1L..30L) store.save(record(savedAt = i))
 
         val loaded = store.load()
-        assertEquals(3, loaded.size)
-        assertEquals(listOf(5L, 4L, 3L), loaded.map { it.savedAt })
+        assertEquals("saved readings are kept until deleted", 30, loaded.size)
+        assertEquals(listOf(30L, 29L, 28L), loaded.take(3).map { it.savedAt })
+    }
+
+    @Test
+    fun `delete removes one reading and leaves the rest`() {
+        val store = FileReadingHistoryStore(tmp.newFile("h.json"))
+        for (i in 1L..3L) store.save(record(savedAt = i))
+
+        store.delete(2L)
+
+        assertEquals(listOf(3L, 1L), store.load().map { it.savedAt })
+    }
+
+    @Test
+    fun `deleting an absent reading changes nothing`() {
+        val store = FileReadingHistoryStore(tmp.newFile("h.json"))
+        store.save(record(savedAt = 1L))
+
+        store.delete(999L)
+
+        assertEquals(listOf(1L), store.load().map { it.savedAt })
+    }
+
+    @Test
+    fun `deleting the last reading leaves an empty collection`() {
+        val store = FileReadingHistoryStore(tmp.newFile("h.json"))
+        store.save(record(savedAt = 1L))
+
+        store.delete(1L)
+
+        assertTrue(store.load().isEmpty())
+    }
+
+    @Test
+    fun `re-saving the same reading replaces it rather than duplicating`() {
+        val store = FileReadingHistoryStore(tmp.newFile("h.json"))
+        store.save(record(savedAt = 5L))
+        store.save(record(savedAt = 5L, spreadId = "houses"))
+
+        val loaded = store.load()
+        assertEquals(1, loaded.size)
+        assertEquals("houses", loaded.first().spreadId)
     }
 
     @Test

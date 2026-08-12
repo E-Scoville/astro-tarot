@@ -25,6 +25,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -88,6 +89,7 @@ import com.astrotarot.ui.theme.GoldTextBrush
 import com.astrotarot.ui.theme.IndigoCard
 import com.astrotarot.ui.theme.IndigoSurface
 import com.astrotarot.ui.theme.Ivory
+import com.astrotarot.ui.theme.ReversedRed
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -157,6 +159,7 @@ fun WelcomeScreen(
     modifier: Modifier = Modifier,
     history: List<ReadingRecord> = emptyList(),
     onRestoreReading: (ReadingRecord) -> Unit = {},
+    onDeleteReading: (ReadingRecord) -> Unit = {},
 ) {
     val context = LocalContext.current
     val scope   = rememberCoroutineScope()
@@ -264,6 +267,7 @@ fun WelcomeScreen(
         HistoryPickerDialog(
             history   = history,
             onSelect  = onRestoreReading,
+            onDelete  = onDeleteReading,
             onDismiss = { showHistory = false },
         )
     }
@@ -330,7 +334,7 @@ fun WelcomeScreen(
                 if (history.isNotEmpty()) {
                     TextButton(onClick = { showHistory = true }) {
                         Text(
-                            text = "Past readings",
+                            text = "Saved readings",
                             color = Gold.copy(alpha = 0.7f),
                             style = MaterialTheme.typography.bodySmall,
                         )
@@ -619,8 +623,19 @@ fun WelcomeScreen(
 private fun HistoryPickerDialog(
     history: List<ReadingRecord>,
     onSelect: (ReadingRecord) -> Unit,
+    onDelete: (ReadingRecord) -> Unit,
     onDismiss: () -> Unit,
 ) {
+    var pendingDelete by remember { mutableStateOf<ReadingRecord?>(null) }
+
+    pendingDelete?.let { record ->
+        ConfirmDeleteDialog(
+            record    = record,
+            onConfirm = { onDelete(record); pendingDelete = null },
+            onDismiss = { pendingDelete = null },
+        )
+    }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor   = IndigoSurface,
@@ -628,7 +643,7 @@ private fun HistoryPickerDialog(
         modifier         = Modifier.border(1.dp, Gold.copy(alpha = 0.4f), RoundedCornerShape(8.dp)),
         title = {
             Text(
-                "Past Readings",
+                "Saved Readings",
                 style = MaterialTheme.typography.titleMedium,
                 color = Gold,
             )
@@ -642,31 +657,44 @@ private fun HistoryPickerDialog(
                         cardCount = record.cards.size,
                         zone      = ZoneId.systemDefault(),
                     )
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onSelect(record); onDismiss() }
-                            .padding(vertical = 10.dp, horizontal = 4.dp),
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Text(
-                            // The name the reading was shown under, not whatever that
-                            // spread id resolves to today.
-                            text  = record.spread?.name ?: Spreads.byId(record.spreadId).name,
-                            color = Ivory,
-                            style = MaterialTheme.typography.bodySmall,
-                            fontWeight = FontWeight.Bold,
-                        )
-                        Text(
-                            text  = rowText.castLine,
-                            color = DimIvory,
-                            style = MaterialTheme.typography.labelSmall,
-                        )
-                        rowText.drawnLine?.let { drawn ->
+                        Column(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clickable { onSelect(record); onDismiss() }
+                                .padding(vertical = 10.dp, horizontal = 4.dp),
+                        ) {
                             Text(
-                                text  = drawn,
-                                color = DimIvory.copy(alpha = 0.7f),
+                                // The name the reading was shown under, not whatever that
+                                // spread id resolves to today.
+                                text  = record.spread?.name ?: Spreads.byId(record.spreadId).name,
+                                color = Ivory,
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.Bold,
+                            )
+                            Text(
+                                text  = rowText.castLine,
+                                color = DimIvory,
                                 style = MaterialTheme.typography.labelSmall,
                             )
+                            rowText.drawnLine?.let { drawn ->
+                                Text(
+                                    text  = drawn,
+                                    color = DimIvory.copy(alpha = 0.7f),
+                                    style = MaterialTheme.typography.labelSmall,
+                                )
+                            }
+                        }
+                        // Deletion is irreversible and sits beside the tap target that
+                        // opens the reading, so it asks first.
+                        TextButton(
+                            onClick = { pendingDelete = record },
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                        ) {
+                            Text("✕", color = DimIvory.copy(alpha = 0.5f), fontSize = 14.sp)
                         }
                     }
                     if (record !== history.last()) {
@@ -678,6 +706,56 @@ private fun HistoryPickerDialog(
         confirmButton = {
             TextButton(onClick = onDismiss) {
                 Text("Cancel", color = DimIvory, style = MaterialTheme.typography.bodySmall)
+            }
+        },
+    )
+}
+
+@Composable
+private fun ConfirmDeleteDialog(
+    record: ReadingRecord,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val rowText = historyRowText(
+        castFor   = record.timestamp,
+        drawnAt   = record.savedAt,
+        cardCount = record.cards.size,
+        zone      = ZoneId.systemDefault(),
+    )
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor   = IndigoSurface,
+        shape            = RoundedCornerShape(8.dp),
+        modifier         = Modifier.border(1.dp, Gold.copy(alpha = 0.4f), RoundedCornerShape(8.dp)),
+        title = {
+            Text("Release this reading?", style = MaterialTheme.typography.titleMedium, color = Gold)
+        },
+        text = {
+            Column {
+                Text(
+                    text  = record.spread?.name ?: Spreads.byId(record.spreadId).name,
+                    color = Ivory,
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.Bold,
+                )
+                Text(rowText.castLine, color = DimIvory, style = MaterialTheme.typography.labelSmall)
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    "It cannot be recovered.",
+                    color = DimIvory.copy(alpha = 0.8f),
+                    style = MaterialTheme.typography.labelSmall,
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onConfirm) {
+                Text("Release", color = ReversedRed, style = MaterialTheme.typography.bodySmall)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Keep", color = DimIvory, style = MaterialTheme.typography.bodySmall)
             }
         },
     )

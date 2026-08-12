@@ -71,6 +71,8 @@ object EngineReadingBuilder : ReadingBuilder {
             lon             = record.lon,
             timestamp       = record.timestamp,
             spread          = restoredSpread(record, reading.size),
+            // It came out of the collection, so it is already kept.
+            savedAt         = record.savedAt,
         )
     }
 
