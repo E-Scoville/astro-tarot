@@ -20,15 +20,8 @@ class TarotAstrologyEngine(private val deck: List<TarotCard>) {
         )
         val influenceMap = weights.associate { (card, _, planet) -> card to planet }
         return drawn.map { (card, weight) ->
-            val reversed = weight < avgWeight
-            if (reversed) {
-                val (rPlanet, rMarker) = findReversalInfluence(card, transits, aspects)
-                WeightedCard(card, weight, reversed = true,
-                    primaryInfluence = rPlanet, reversalMarker = rMarker)
-            } else {
-                WeightedCard(card, weight, reversed = false,
-                    primaryInfluence = influenceMap[card])
-            }
+            toWeightedCard(card, weight, reversed = weight < avgWeight,
+                influenceMap, transits, aspects)
         }
     }
 
@@ -87,18 +80,28 @@ class TarotAstrologyEngine(private val deck: List<TarotCard>) {
             // Reversal is judged against the full sky, not the scoped table, so
             // the threshold is uniform across positions regardless of binding.
             val reversed = (fullWeightMap[card] ?: weight) < fullAvg
-            val weightedCard = if (reversed) {
-                val (rPlanet, rMarker) = findReversalInfluence(card, transits, aspects)
-                WeightedCard(card, weight, reversed = true,
-                    primaryInfluence = rPlanet, reversalMarker = rMarker)
-            } else {
-                WeightedCard(card, weight, reversed = false,
-                    primaryInfluence = influenceMap[card])
-            }
-            result += weightedCard
+            result += toWeightedCard(card, weight, reversed, influenceMap, transits, aspects)
         }
 
         return result
+    }
+
+    // Attaches the reveal metadata to a drawn card: upright cards carry the
+    // planet that called them; reversed cards carry the resisting influence.
+    private fun toWeightedCard(
+        card: TarotCard,
+        weight: Double,
+        reversed: Boolean,
+        influenceMap: Map<TarotCard, CelestialBody?>,
+        transits: List<PlanetPosition>,
+        aspects: List<Aspect>,
+    ): WeightedCard = if (reversed) {
+        val (rPlanet, rMarker) = findReversalInfluence(card, transits, aspects)
+        WeightedCard(card, weight, reversed = true,
+            primaryInfluence = rPlanet, reversalMarker = rMarker)
+    } else {
+        WeightedCard(card, weight, reversed = false,
+            primaryInfluence = influenceMap[card])
     }
 
     // Builds a per-card weight table: card -> (total weight, top-contributing planet).
